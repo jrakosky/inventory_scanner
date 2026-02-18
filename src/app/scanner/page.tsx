@@ -104,7 +104,7 @@ export default function ScannerPage() {
 
   const startScanning = async () => {
     try {
-      const scanner = new Html5Qrcode("scanner-viewport");
+      const scanner = new Html5Qrcode("scanner-viewport", { formatsToSupport: [0, 1, 2, 3, 4, 5, 6], verbose: false });
       scannerRef.current = scanner;
 
       await scanner.start(
@@ -113,7 +113,6 @@ export default function ScannerPage() {
           fps: 10,
           qrbox: { width: 280, height: 150 },
           aspectRatio: 1.0,
-          formatsToSupport: [0, 1, 2, 3, 4, 5, 6], // EAN_13, EAN_8, UPC_A, UPC_E, etc.
         },
         onScanSuccess,
         () => {} // ignore scan failures (expected when no barcode in frame)
