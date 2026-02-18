@@ -315,107 +315,114 @@ export default function ScannerPage() {
         </div>
       )}
 
-      {/* Scanner Viewport */}
-      <Card className="overflow-hidden border-border/50">
-        <CardContent className="p-0">
-          <div className="relative aspect-square w-full bg-black/50">
-            <div id="scanner-viewport" className="h-full w-full" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Scanner Viewport Column */}
+        <div className="space-y-4 md:max-w-md">
+          <Card className="overflow-hidden border-border/50">
+            <CardContent className="p-0">
+              <div className="relative aspect-square w-full bg-black/50">
+                <div id="scanner-viewport" className="h-full w-full" />
 
-            {scanMode === "scanning" && (
-              <div className="scan-line pointer-events-none absolute inset-x-0" />
-            )}
+                {scanMode === "scanning" && (
+                  <div className="scan-line pointer-events-none absolute inset-x-0" />
+                )}
 
-            {scanMode === "idle" && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-muted/50">
-                <Camera className="h-12 w-12 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  Tap below to start scanning
-                </p>
+                {scanMode === "idle" && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-muted/50">
+                    <Camera className="h-12 w-12 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      Tap below to start scanning
+                    </p>
+                  </div>
+                )}
+
+                {scanMode === "paused" && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                    <div className="rounded-full bg-primary/20 p-4">
+                      <Check className="h-8 w-8 text-primary" />
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </CardContent>
+          </Card>
 
-            {scanMode === "paused" && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                <div className="rounded-full bg-primary/20 p-4">
-                  <Check className="h-8 w-8 text-primary" />
-                </div>
-              </div>
+          {/* Controls */}
+          <div className="flex gap-3">
+            {scanMode === "idle" ? (
+              <Button onClick={startScanning} className="flex-1" size="lg">
+                <Camera className="mr-2 h-5 w-5" />
+                Start Scanner
+              </Button>
+            ) : (
+              <Button
+                onClick={stopScanning}
+                variant="destructive"
+                className="flex-1"
+                size="lg"
+              >
+                <CameraOff className="mr-2 h-5 w-5" />
+                Stop Scanner
+              </Button>
             )}
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Controls */}
-      <div className="flex gap-3">
-        {scanMode === "idle" ? (
-          <Button onClick={startScanning} className="flex-1" size="lg">
-            <Camera className="mr-2 h-5 w-5" />
-            Start Scanner
-          </Button>
-        ) : (
-          <Button
-            onClick={stopScanning}
-            variant="destructive"
-            className="flex-1"
-            size="lg"
-          >
-            <CameraOff className="mr-2 h-5 w-5" />
-            Stop Scanner
-          </Button>
-        )}
-      </div>
-
-      {/* Session Info */}
-      <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
-        <span className="text-sm text-muted-foreground">Session scans</span>
-        <Badge variant="secondary">
-          <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-            {scanCount}
-          </span>
-        </Badge>
-      </div>
-
-      {lastBarcode && (
-        <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
-          <span className="text-sm text-muted-foreground">Last barcode</span>
-          <span
-            className="text-sm font-medium"
-            style={{ fontFamily: "'JetBrains Mono', monospace" }}
-          >
-            {lastBarcode}
-          </span>
         </div>
-      )}
 
-      {/* Manual Entry */}
-      <Card className="border-border/50">
-        <CardContent className="p-4">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const form = e.target as HTMLFormElement;
-              const input = form.elements.namedItem(
-                "manual-barcode"
-              ) as HTMLInputElement;
-              if (input.value.trim()) {
-                onScanSuccess(input.value.trim());
-                input.value = "";
-              }
-            }}
-            className="flex gap-2"
-          >
-            <Input
-              name="manual-barcode"
-              placeholder="Enter barcode manually..."
-              className="flex-1"
-              style={{ fontFamily: "'JetBrains Mono', monospace" }}
-            />
-            <Button type="submit" variant="secondary">
-              <Hash className="h-4 w-4" />
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+        {/* Info / Controls Column */}
+        <div className="space-y-4">
+          {/* Session Info */}
+          <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
+            <span className="text-sm text-muted-foreground">Session scans</span>
+            <Badge variant="secondary">
+              <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                {scanCount}
+              </span>
+            </Badge>
+          </div>
+
+          {lastBarcode && (
+            <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
+              <span className="text-sm text-muted-foreground">Last barcode</span>
+              <span
+                className="text-sm font-medium"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {lastBarcode}
+              </span>
+            </div>
+          )}
+
+          {/* Manual Entry */}
+          <Card className="border-border/50">
+            <CardContent className="p-4">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = e.target as HTMLFormElement;
+                  const input = form.elements.namedItem(
+                    "manual-barcode"
+                  ) as HTMLInputElement;
+                  if (input.value.trim()) {
+                    onScanSuccess(input.value.trim());
+                    input.value = "";
+                  }
+                }}
+                className="flex gap-2"
+              >
+                <Input
+                  name="manual-barcode"
+                  placeholder="Enter barcode manually..."
+                  className="flex-1"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                />
+                <Button type="submit" variant="secondary">
+                  <Hash className="h-4 w-4" />
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
 
       {/* New Item Dialog */}
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>

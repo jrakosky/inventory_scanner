@@ -84,28 +84,8 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Quick Action */}
-      <Link href="/scanner">
-        <Card className="group cursor-pointer border-primary/20 bg-primary/5 transition-all hover:border-primary/40 hover:bg-primary/10">
-          <CardContent className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-primary/20 p-2.5">
-                <ScanBarcode className="h-6 w-6 text-primary" />
-              </div>
-              <div>
-                <p className="font-semibold">Start Scanning</p>
-                <p className="text-sm text-muted-foreground">
-                  Open camera to scan barcodes
-                </p>
-              </div>
-            </div>
-            <ArrowRight className="h-5 w-5 text-primary transition-transform group-hover:translate-x-1" />
-          </CardContent>
-        </Card>
-      </Link>
-
       {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {statCards.map((stat) => (
           <Card key={stat.label} className="border-border/50">
             <CardContent className="p-4">
@@ -127,6 +107,29 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* Quick Action + Recent Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+      {/* Quick Action */}
+      <Link href="/scanner">
+        <Card className="group h-full cursor-pointer border-primary/20 bg-primary/5 transition-all hover:border-primary/40 hover:bg-primary/10">
+          <CardContent className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-xl bg-primary/20 p-2.5">
+                <ScanBarcode className="h-6 w-6 text-primary" />
+              </div>
+              <div>
+                <p className="font-semibold">Start Scanning</p>
+                <p className="text-sm text-muted-foreground">
+                  Open camera to scan barcodes
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-5 w-5 text-primary transition-transform group-hover:translate-x-1" />
+          </CardContent>
+        </Card>
+      </Link>
 
       {/* Recent Activity */}
       <Card className="border-border/50">
@@ -175,6 +178,8 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      </div>
     </div>
   );
 }

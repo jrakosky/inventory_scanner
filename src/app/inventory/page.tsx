@@ -253,54 +253,122 @@ export default function InventoryPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {items.map((item) => {
-            const isLowStock = item.quantity <= item.minStock && item.minStock > 0;
-            return (
-              <button
-                key={item.id}
-                onClick={() => openDetail(item)}
-                className="flex w-full items-center gap-3 rounded-lg border border-border/50 p-3 text-left transition-colors hover:bg-accent/50 active:bg-accent"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold">
-                      {item.name}
+        <>
+          {/* Mobile card list */}
+          <div className="space-y-2 md:hidden">
+            {items.map((item) => {
+              const isLowStock = item.quantity <= item.minStock && item.minStock > 0;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => openDetail(item)}
+                  className="flex w-full items-center gap-3 rounded-lg border border-border/50 p-3 text-left transition-colors hover:bg-accent/50 active:bg-accent"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-semibold">
+                        {item.name}
+                      </p>
+                      {isLowStock && (
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                      )}
+                    </div>
+                    <p
+                      className="text-xs text-muted-foreground"
+                      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                    >
+                      {item.barcode}
                     </p>
-                    {isLowStock && (
-                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                    )}
+                    <div className="mt-1 flex items-center gap-2">
+                      {item.location && (
+                        <span className="flex items-center text-xs text-muted-foreground">
+                          <MapPin className="mr-0.5 h-3 w-3" />
+                          {item.location}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <p
-                    className="text-xs text-muted-foreground"
-                    style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                  >
-                    {item.barcode}
-                  </p>
-                  <div className="mt-1 flex items-center gap-2">
-                    {item.location && (
-                      <span className="flex items-center text-xs text-muted-foreground">
-                        <MapPin className="mr-0.5 h-3 w-3" />
-                        {item.location}
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={isLowStock ? "warning" : "secondary"}
+                      className="tabular-nums"
+                    >
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                        {item.quantity}
                       </span>
-                    )}
+                    </Badge>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
                   </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge
-                    variant={isLowStock ? "warning" : "secondary"}
-                    className="tabular-nums"
-                  >
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                      {item.quantity}
-                    </span>
-                  </Badge>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </button>
-            );
-          })}
-        </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Desktop table view */}
+          <div className="hidden md:block overflow-x-auto rounded-lg border border-border/50">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border/50 bg-muted/30">
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Barcode</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Qty</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Location</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Condition</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => {
+                  const isLowStock = item.quantity <= item.minStock && item.minStock > 0;
+                  return (
+                    <tr
+                      key={item.id}
+                      onClick={() => openDetail(item)}
+                      className="cursor-pointer border-b border-border/30 transition-colors hover:bg-accent/50 last:border-b-0"
+                    >
+                      <td
+                        className="px-4 py-3 text-muted-foreground"
+                        style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                      >
+                        {item.barcode}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{item.name}</span>
+                          {isLowStock && (
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Badge
+                          variant={isLowStock ? "warning" : "secondary"}
+                          className="tabular-nums"
+                        >
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                            {item.quantity}
+                          </span>
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {item.location || "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="outline">{item.condition}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {new Date(item.updatedAt).toLocaleDateString([], {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* Item Detail / Edit Dialog */}

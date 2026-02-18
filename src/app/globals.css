@@ -24,6 +24,7 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.5rem;
+    --sidebar-width: 16rem;
   }
 
   .dark {
@@ -99,4 +100,11 @@
 /* Prevent pull-to-refresh on mobile when scanning */
 .no-pull-refresh {
   overscroll-behavior-y: contain;
+}
+
+/* Sidebar layout offset for md+ screens */
+@media (min-width: 768px) {
+  .sidebar-offset {
+    margin-left: var(--sidebar-width);
+  }
 }

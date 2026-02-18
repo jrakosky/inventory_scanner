@@ -3,7 +3,7 @@
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { BottomNav, TopBar } from "@/components/nav";
+import { BottomNav, Sidebar, TopBar } from "@/components/nav";
 import { Loader2 } from "lucide-react";
 
 export default function InventoryLayout({ children }: { children: React.ReactNode }) {
@@ -23,9 +23,12 @@ export default function InventoryLayout({ children }: { children: React.ReactNod
   if (status === "unauthenticated") return null;
 
   return (
-    <div className="min-h-screen pb-20">
-      <TopBar title="Inventory" />
-      <main className="mx-auto max-w-lg px-4 py-4">{children}</main>
+    <div className="min-h-screen pb-20 md:pb-0">
+      <Sidebar />
+      <div className="sidebar-offset">
+        <TopBar title="Inventory" />
+        <main className="mx-auto max-w-5xl px-4 py-4">{children}</main>
+      </div>
       <BottomNav />
     </div>
   );
