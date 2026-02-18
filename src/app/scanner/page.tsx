@@ -139,8 +139,9 @@ export default function ScannerPage() {
     // Pause scanner while handling result
     if (scannerRef.current) {
       try {
-        await scannerRef.current.pause(true);
+        await scannerRef.current.stop();
       } catch {}
+      scannerRef.current = null;
     }
     setScanMode("paused");
     setLastBarcode(decodedText);
@@ -178,15 +179,15 @@ export default function ScannerPage() {
     }
   };
 
-  const resumeScanning = () => {
+  const resumeScanning = async () => {
     if (scannerRef.current) {
       try {
-        scannerRef.current.resume();
-        setScanMode("scanning");
-      } catch {
-        startScanning();
-      }
+        await scannerRef.current.stop();
+      } catch {}
+      scannerRef.current = null;
     }
+    setScanMode("idle");
+    setTimeout(() => startScanning(), 500);
   };
 
   const handleCreateItem = async () => {
