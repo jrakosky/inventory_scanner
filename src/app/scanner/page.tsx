@@ -60,6 +60,7 @@ export default function ScannerPage() {
     message: string;
   } | null>(null);
   const [scanCount, setScanCount] = useState(0);
+  const [lookupSource, setLookupSource] = useState<string | null>(null);
 
   // New item form
   const [newItem, setNewItem] = useState({
@@ -201,14 +202,30 @@ export default function ScannerPage() {
           setNotes("");
           setShowExistingDialog(true);
         } else {
-          setNewItem({
-            name: "",
-            description: "",
-            quantity: 1,
-            location: "",
-            category: "",
-            condition: "GOOD",
-          });
+          // Look up product info from barcode databases
+          try {
+            const lookupRes = await fetch(`/api/lookup?barcode=${encodeURIComponent(decodedText)}`);
+            const lookupData = await lookupRes.json();
+            setLookupSource(lookupData.source || "none");
+            setNewItem({
+              name: lookupData.name || decodedText,
+              description: lookupData.description || "",
+              quantity: 1,
+              location: "",
+              category: lookupData.category || "",
+              condition: "GOOD",
+            });
+          } catch {
+            setLookupSource(null);
+            setNewItem({
+              name: decodedText,
+              description: "",
+              quantity: 1,
+              location: "",
+              category: "",
+              condition: "GOOD",
+            });
+          }
           setShowNewDialog(true);
         }
       }
@@ -441,6 +458,14 @@ export default function ScannerPage() {
                 {lastBarcode}
               </code>{" "}
               not found. Add it to inventory.
+              {lookupSource && lookupSource !== "none" && (
+                <>
+                  {" "}
+                  <span className="text-xs text-primary">
+                    Name auto-filled from {lookupSource === "openfoodfacts" ? "Open Food Facts" : "UPC ItemDB"}.
+                  </span>
+                </>
+              )}
             </DialogDescription>
           </DialogHeader>
 
