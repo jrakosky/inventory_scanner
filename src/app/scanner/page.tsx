@@ -78,6 +78,8 @@ export default function ScannerPage() {
 
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const feedbackTimeout = useRef<NodeJS.Timeout | null>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const qtyInputRef = useRef<HTMLInputElement>(null);
 
   // Clean up on unmount
   useEffect(() => {
@@ -93,6 +95,18 @@ export default function ScannerPage() {
       if (feedbackTimeout.current) clearTimeout(feedbackTimeout.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (showNewDialog) {
+      setTimeout(() => nameInputRef.current?.focus(), 300);
+    }
+  }, [showNewDialog]);
+
+  useEffect(() => {
+    if (showExistingDialog) {
+      setTimeout(() => qtyInputRef.current?.focus(), 300);
+    }
+  }, [showExistingDialog]);
 
   // Bluetooth/USB barcode scanner support - captures rapid keyboard input
   useEffect(() => {
@@ -476,6 +490,7 @@ export default function ScannerPage() {
               </Label>
               <Input
                 id="item-name"
+                ref={nameInputRef}
                 value={newItem.name}
                 onChange={(e) =>
                   setNewItem({ ...newItem, name: e.target.value })
@@ -622,6 +637,7 @@ export default function ScannerPage() {
                 <Label htmlFor="add-qty">Add Quantity</Label>
                 <Input
                   id="add-qty"
+                  ref={qtyInputRef}
                   type="number"
                   min={1}
                   value={addQuantity}
