@@ -1,0 +1,434 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import {
+  Search,
+  Filter,
+  Download,
+  Upload,
+  Package,
+  MapPin,
+  ChevronRight,
+  AlertTriangle,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+
+interface InventoryItem {
+  id: string;
+  barcode: string;
+  name: string;
+  description: string | null;
+  quantity: number;
+  location: string | null;
+  category: string | null;
+  condition: string;
+  minStock: number;
+  updatedAt: string;
+}
+
+export default function InventoryPage() {
+  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [showDetail, setShowDetail] = useState(false);
+  const [showExport, setShowExport] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  // Edit state
+  const [editName, setEditName] = useState("");
+  const [editQuantity, setEditQuantity] = useState(0);
+  const [editLocation, setEditLocation] = useState("");
+  const [editCondition, setEditCondition] = useState("GOOD");
+  const [editDescription, setEditDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const fetchItems = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (categoryFilter !== "all") params.set("category", categoryFilter);
+
+    try {
+      const res = await fetch(`/api/inventory?${params}`);
+      const data = await res.json();
+      setItems(data.items || []);
+      if (data.categories) setCategories(data.categories);
+    } catch {
+      console.error("Failed to fetch inventory");
+    } finally {
+      setLoading(false);
+    }
+  }, [search, categoryFilter]);
+
+  useEffect(() => {
+    fetchItems();
+  }, [fetchItems]);
+
+  const openDetail = (item: InventoryItem) => {
+    setSelectedItem(item);
+    setEditName(item.name);
+    setEditQuantity(item.quantity);
+    setEditLocation(item.location || "");
+    setEditCondition(item.condition);
+    setEditDescription(item.description || "");
+    setShowDetail(true);
+  };
+
+  const handleSave = async () => {
+    if (!selectedItem) return;
+    setSaving(true);
+
+    try {
+      const res = await fetch(`/api/inventory`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: selectedItem.id,
+          name: editName,
+          quantity: editQuantity,
+          location: editLocation,
+          condition: editCondition,
+          description: editDescription,
+        }),
+      });
+
+      if (res.ok) {
+        setShowDetail(false);
+        fetchItems();
+      }
+    } catch {
+      console.error("Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedItem) return;
+    if (!confirm(`Delete "${selectedItem.name}"? This cannot be undone.`))
+      return;
+
+    try {
+      await fetch(`/api/inventory?id=${selectedItem.id}`, { method: "DELETE" });
+      setShowDetail(false);
+      fetchItems();
+    } catch {
+      console.error("Failed to delete");
+    }
+  };
+
+  const handleExportCSV = async () => {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/export/csv");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `inventory-${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setShowExport(false);
+    } catch {
+      console.error("Export failed");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleSyncSage = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/sage/sync", { method: "POST" });
+      const data = await res.json();
+      alert(data.message || "Sync complete");
+      setShowExport(false);
+    } catch {
+      alert("Sync failed. Check your Sage Intacct configuration.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Search & Filter */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search items..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-32">
+            <Filter className="mr-1 h-3 w-3" />
+            <SelectValue placeholder="Category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            {categories.map((cat) => (
+              <SelectItem key={cat} value={cat}>
+                {cat}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Action Bar */}
+      <div className="flex gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-1"
+          onClick={() => setShowExport(true)}
+        >
+          <Download className="mr-1.5 h-3.5 w-3.5" />
+          Export
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-1"
+          onClick={() => setShowExport(true)}
+        >
+          <Upload className="mr-1.5 h-3.5 w-3.5" />
+          Sync to Sage
+        </Button>
+      </div>
+
+      {/* Item Count */}
+      <p className="text-xs text-muted-foreground">
+        {items.length} item{items.length !== 1 ? "s" : ""}
+      </p>
+
+      {/* Item List */}
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="h-20 animate-pulse rounded-lg border border-border/50 bg-muted/30"
+            />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <Card className="border-border/50">
+          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+            <Package className="mb-3 h-10 w-10 text-muted-foreground" />
+            <p className="font-medium">No items found</p>
+            <p className="text-sm text-muted-foreground">
+              {search
+                ? "Try a different search term"
+                : "Scan some barcodes to add inventory"}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => {
+            const isLowStock = item.quantity <= item.minStock && item.minStock > 0;
+            return (
+              <button
+                key={item.id}
+                onClick={() => openDetail(item)}
+                className="flex w-full items-center gap-3 rounded-lg border border-border/50 p-3 text-left transition-colors hover:bg-accent/50 active:bg-accent"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-semibold">
+                      {item.name}
+                    </p>
+                    {isLowStock && (
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                    )}
+                  </div>
+                  <p
+                    className="text-xs text-muted-foreground"
+                    style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                  >
+                    {item.barcode}
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    {item.location && (
+                      <span className="flex items-center text-xs text-muted-foreground">
+                        <MapPin className="mr-0.5 h-3 w-3" />
+                        {item.location}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={isLowStock ? "warning" : "secondary"}
+                    className="tabular-nums"
+                  >
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                      {item.quantity}
+                    </span>
+                  </Badge>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Item Detail / Edit Dialog */}
+      <Dialog open={showDetail} onOpenChange={setShowDetail}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Item</DialogTitle>
+            <DialogDescription>
+              Barcode:{" "}
+              <code
+                className="rounded bg-muted px-1.5 py-0.5 text-xs"
+                style={{ fontFamily: "'JetBrains Mono', monospace" }}
+              >
+                {selectedItem?.barcode}
+              </code>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                rows={2}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Quantity</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editQuantity}
+                  onChange={(e) => setEditQuantity(parseInt(e.target.value) || 0)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Condition</Label>
+                <Select value={editCondition} onValueChange={setEditCondition}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NEW">New</SelectItem>
+                    <SelectItem value="GOOD">Good</SelectItem>
+                    <SelectItem value="FAIR">Fair</SelectItem>
+                    <SelectItem value="POOR">Poor</SelectItem>
+                    <SelectItem value="DAMAGED">Damaged</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Location</Label>
+              <Input
+                value={editLocation}
+                onChange={(e) => setEditLocation(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="destructive" size="sm" onClick={handleDelete}>
+              Delete
+            </Button>
+            <div className="flex-1" />
+            <Button variant="outline" onClick={() => setShowDetail(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export Dialog */}
+      <Dialog open={showExport} onOpenChange={setShowExport}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Export Inventory</DialogTitle>
+            <DialogDescription>
+              Choose how to export your inventory data.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3"
+              onClick={handleExportCSV}
+              disabled={exporting}
+            >
+              <Download className="mr-3 h-5 w-5 text-primary" />
+              <div className="text-left">
+                <p className="font-medium">
+                  {exporting ? "Downloading..." : "Download CSV"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Export all items as a spreadsheet
+                </p>
+              </div>
+            </Button>
+
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3"
+              onClick={handleSyncSage}
+              disabled={syncing}
+            >
+              <Upload className="mr-3 h-5 w-5 text-emerald-400" />
+              <div className="text-left">
+                <p className="font-medium">
+                  {syncing ? "Syncing..." : "Sync to Sage Intacct"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Push inventory data to Sage
+                </p>
+              </div>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

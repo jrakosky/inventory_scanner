@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String          @id @default(cuid())
+  name           String?
+  email          String          @unique
+  hashedPassword String
+  role           Role            @default(USER)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  scanLogs       ScanLog[]
+  inventoryItems InventoryItem[]
+}
+
+model InventoryItem {
+  id          String    @id @default(cuid())
+  barcode     String    @unique
+  name        String
+  description String?   @db.Text
+  quantity    Int       @default(0)
+  location    String?
+  category    String?
+  condition   Condition @default(GOOD)
+  minStock    Int       @default(0)
+  costPrice   Decimal?  @db.Decimal(10, 2)
+  sageItemId  String?
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  scanLogs    ScanLog[]
+
+  @@index([barcode])
+  @@index([name])
+  @@index([category])
+}
+
+model ScanLog {
+  id              String        @id @default(cuid())
+  barcode         String
+  action          ScanAction
+  quantityChange  Int           @default(0)
+  notes           String?       @db.Text
+  scannedBy       User          @relation(fields: [scannedById], references: [id])
+  scannedById     String
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  inventoryItemId String?
+  createdAt       DateTime      @default(now())
+
+  @@index([barcode])
+  @@index([createdAt])
+  @@index([scannedById])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum Condition {
+  NEW
+  GOOD
+  FAIR
+  POOR
+  DAMAGED
+}
+
+enum ScanAction {
+  CREATED
+  INCREMENTED
+  DECREMENTED
+  UPDATED
+  AUDITED
+}

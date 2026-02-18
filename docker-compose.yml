@@ -1,0 +1,54 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=mysql://inventory:${DB_PASSWORD:-inventory_pass}@db:3306/inventory_db
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-me-to-a-random-secret}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - SAGE_SENDER_ID=${SAGE_SENDER_ID:-}
+      - SAGE_SENDER_PASSWORD=${SAGE_SENDER_PASSWORD:-}
+      - SAGE_COMPANY_ID=${SAGE_COMPANY_ID:-}
+      - SAGE_USER_ID=${SAGE_USER_ID:-}
+      - SAGE_USER_PASSWORD=${SAGE_USER_PASSWORD:-}
+      - SAGE_ENDPOINT=${SAGE_ENDPOINT:-https://api.intacct.com/ia/xml/xmlgw.phtml}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - inventory-net
+
+  db:
+    image: mariadb:11
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-root_password}
+      - MYSQL_DATABASE=inventory_db
+      - MYSQL_USER=inventory
+      - MYSQL_PASSWORD=${DB_PASSWORD:-inventory_pass}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - inventory-net
+
+volumes:
+  mariadb_data:
+    driver: local
+
+networks:
+  inventory-net:
+    driver: bridge
