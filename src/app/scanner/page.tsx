@@ -93,6 +93,44 @@ export default function ScannerPage() {
     };
   }, []);
 
+  // Bluetooth/USB barcode scanner support - captures rapid keyboard input
+  useEffect(() => {
+    let buffer = "";
+    let lastKeyTime = 0;
+    let timeout: NodeJS.Timeout;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const now = Date.now();
+
+      // If typing into an input field, skip
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (e.key === "Enter" && buffer.length >= 4) {
+        e.preventDefault();
+        const barcode = buffer;
+        buffer = "";
+        onScanSuccess(barcode);
+        return;
+      }
+
+      // Single printable character
+      if (e.key.length === 1) {
+        if (now - lastKeyTime > 100) buffer = "";
+        buffer += e.key;
+        lastKeyTime = now;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => { buffer = ""; }, 200);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      clearTimeout(timeout);
+    };
+  }, []);
+
   const showFeedback = useCallback(
     (type: "success" | "error", message: string) => {
       setFeedback({ type, message });
