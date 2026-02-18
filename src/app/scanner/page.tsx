@@ -104,15 +104,16 @@ export default function ScannerPage() {
 
   const startScanning = async () => {
     try {
-      const scanner = new Html5Qrcode("scanner-viewport", { formatsToSupport: [0, 1, 2, 3, 4, 5, 6], verbose: false });
+      const scanner = new Html5Qrcode("scanner-viewport", { formatsToSupport: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], verbose: false });
       scannerRef.current = scanner;
 
       await scanner.start(
         { facingMode: "environment" },
         {
-          fps: 10,
-          qrbox: { width: 280, height: 150 },
+          fps: 15,
+          qrbox: { width: 300, height: 200 },
           aspectRatio: 1.0,
+          disableFlip: false,
         },
         onScanSuccess,
         () => {} // ignore scan failures (expected when no barcode in frame)
