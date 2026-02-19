@@ -92,8 +92,8 @@ export default function CycleCountPage() {
       const res = await fetch("/api/inventory");
       const data = await res.json();
       const items = data.items || [];
-      setZones([...new Set(items.map((i: any) => i.zone).filter(Boolean))] as string[]);
-      setAisles([...new Set(items.map((i: any) => i.aisle).filter(Boolean))] as string[]);
+      setZones(Array.from(new Set(items.map((i: any) => i.zone).filter(Boolean))) as string[]);
+      setAisles(Array.from(new Set(items.map((i: any) => i.aisle).filter(Boolean))) as string[]);
       setCategories(data.categories || []);
     } catch {}
   }, []);
