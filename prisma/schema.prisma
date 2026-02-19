@@ -15,8 +15,10 @@ model User {
   role           Role            @default(USER)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-  scanLogs       ScanLog[]
-  inventoryItems InventoryItem[]
+  scanLogs           ScanLog[]
+  inventoryItems     InventoryItem[]
+  cycleCountsCreated CycleCount[]
+  cycleCountEntries  CycleCountEntry[] @relation("CountedByUser")
 }
 
 model InventoryItem {
@@ -39,7 +41,8 @@ model InventoryItem {
   createdById String
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
-  scanLogs    ScanLog[]
+  scanLogs          ScanLog[]
+  cycleCountEntries CycleCountEntry[]
 
   @@index([barcode])
   @@index([name])
@@ -84,4 +87,58 @@ enum ScanAction {
   DECREMENTED
   UPDATED
   AUDITED
+}
+
+model CycleCount {
+  id            String             @id @default(cuid())
+  name          String
+  status        CycleCountStatus   @default(NOT_STARTED)
+  filterType    String?
+  filterValue   String?
+  notes         String?            @db.Text
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdBy     User               @relation(fields: [createdById], references: [id])
+  createdById   String
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  entries       CycleCountEntry[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model CycleCountEntry {
+  id               String        @id @default(cuid())
+  cycleCount       CycleCount    @relation(fields: [cycleCountId], references: [id], onDelete: Cascade)
+  cycleCountId     String
+  inventoryItem    InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItemId  String
+  expectedQty      Int
+  countedQty       Int?
+  variance         Int?
+  status           EntryStatus   @default(PENDING)
+  countedBy        User?         @relation("CountedByUser", fields: [countedById], references: [id])
+  countedById      String?
+  adjustmentReason String?
+  countedAt        DateTime?
+  createdAt        DateTime      @default(now())
+
+  @@index([cycleCountId])
+  @@index([inventoryItemId])
+  @@index([status])
+}
+
+enum CycleCountStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COUNTED
+  RECONCILED
+  VOIDED
+}
+
+enum EntryStatus {
+  PENDING
+  COUNTED
+  SKIPPED
 }

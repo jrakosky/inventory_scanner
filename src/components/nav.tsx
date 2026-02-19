@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ScanBarcode, LayoutDashboard, Package, Tag, Settings, LogOut } from "lucide-react";
+import { ScanBarcode, LayoutDashboard, Package, Tag, ClipboardCheck, Settings, LogOut } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/scanner", label: "Scan", icon: ScanBarcode },
   { href: "/inventory", label: "Inventory", icon: Package },
+  { href: "/cycle-count", label: "Count", icon: ClipboardCheck },
   { href: "/labels", label: "Labels", icon: Tag },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
