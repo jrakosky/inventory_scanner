@@ -12,6 +12,7 @@ import {
   Hash,
   MapPin,
   MessageSquare,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +63,7 @@ export default function ScannerPage() {
   const [scanCount, setScanCount] = useState(0);
   const [lookupSource, setLookupSource] = useState<string | null>(null);
   const [nameEdited, setNameEdited] = useState(false);
+  const [lastSavedItemId, setLastSavedItemId] = useState<string | null>(null);
 
   // New item form
   const [newItem, setNewItem] = useState({
@@ -262,6 +264,23 @@ export default function ScannerPage() {
     setTimeout(() => startScanning(), 500);
   };
 
+  const printLabel = (itemId: string) => {
+    const params = new URLSearchParams({
+      items: itemId,
+      size: "30252",
+      copies: "1",
+      showName: "true",
+      showBarcode: "true",
+      showLocation: "false",
+      showQty: "false",
+      showDate: "false",
+      customText: "",
+      barcodeType: "CODE128",
+      fontSize: "medium",
+    });
+    window.open(`/api/labels?${params}`, "_blank");
+  };
+
   const handleCreateItem = async () => {
     if (!lastBarcode || !newItem.name.trim()) return;
     setSaving(true);
@@ -278,6 +297,8 @@ export default function ScannerPage() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        setLastSavedItemId(data.item?.id || null);
         setScanCount((c) => c + 1);
         showFeedback("success", `Added "${newItem.name}" to inventory`);
         setShowNewDialog(false);
@@ -310,6 +331,8 @@ export default function ScannerPage() {
       });
 
       if (res.ok) {
+        const data = await res.json();
+        setLastSavedItemId(data.item?.id || null);
         setScanCount((c) => c + 1);
         showFeedback(
           "success",
@@ -595,6 +618,17 @@ export default function ScannerPage() {
               Cancel
             </Button>
             <Button
+              variant="outline"
+              onClick={async () => {
+                await handleCreateItem();
+                if (lastSavedItemId) printLabel(lastSavedItemId);
+              }}
+              disabled={saving || !newItem.name.trim()}
+            >
+              <Printer className="mr-1.5 h-4 w-4" />
+              {saving ? "Saving..." : "Save & Print"}
+            </Button>
+            <Button
               onClick={handleCreateItem}
               disabled={saving || !newItem.name.trim()}
             >
@@ -675,6 +709,17 @@ export default function ScannerPage() {
               }}
             >
               Skip
+            </Button>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                await handleUpdateItem();
+                if (lastSavedItemId) printLabel(lastSavedItemId);
+              }}
+              disabled={saving}
+            >
+              <Printer className="mr-1.5 h-4 w-4" />
+              {saving ? "Saving..." : "Save & Print"}
             </Button>
             <Button onClick={handleUpdateItem} disabled={saving}>
               {saving

@@ -10,6 +10,7 @@ import {
   MapPin,
   ChevronRight,
   AlertTriangle,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -174,6 +175,23 @@ export default function InventoryPage() {
     }
   };
 
+  const printLabel = (item: InventoryItem) => {
+    const params = new URLSearchParams({
+      items: item.id,
+      size: "30252",
+      copies: "1",
+      showName: "true",
+      showBarcode: "true",
+      showLocation: "false",
+      showQty: "false",
+      showDate: "false",
+      customText: "",
+      barcodeType: "CODE128",
+      fontSize: "medium",
+    });
+    window.open(`/api/labels?${params}`, "_blank");
+  };
+
   return (
     <div className="space-y-4">
       {/* Search & Filter */}
@@ -289,6 +307,16 @@ export default function InventoryPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        printLabel(item);
+                      }}
+                      className="rounded-md p-1 text-muted-foreground hover:text-primary transition-colors"
+                      title="Print label"
+                    >
+                      <Printer className="h-3.5 w-3.5" />
+                    </button>
                     <Badge
                       variant={isLowStock ? "warning" : "secondary"}
                       className="tabular-nums"
@@ -315,6 +343,7 @@ export default function InventoryPage() {
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Location</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Condition</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Updated</th>
+                  <th className="px-4 py-3 text-center font-medium text-muted-foreground w-12"></th>
                 </tr>
               </thead>
               <tbody>
@@ -361,6 +390,18 @@ export default function InventoryPage() {
                           month: "short",
                           day: "numeric",
                         })}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            printLabel(item);
+                          }}
+                          className="rounded-md p-1 text-muted-foreground hover:text-primary transition-colors"
+                          title="Print label"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
                   );
