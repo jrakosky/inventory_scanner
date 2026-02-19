@@ -19,7 +19,6 @@ import {
   ArrowUp,
   ArrowDown,
   Minus,
-  Tag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -846,7 +845,6 @@ export default function InventoryPage() {
                   return (
                     <tr
                       key={item.id}
-                      onDoubleClick={() => openDetail(item)}
                       className={`border-b border-border/30 last:border-b-0 transition-colors ${
                         isSelected
                           ? "bg-primary/5"
