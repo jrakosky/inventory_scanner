@@ -168,38 +168,40 @@ export default function ScannerPage() {
           setNotes("");
           setShowExistingDialog(true);
         } else {
-          try {
-            const lookupRes = await fetch(`/api/lookup?barcode=${encodeURIComponent(barcode)}`);
-            const lookupData = await lookupRes.json();
-            setLookupSource(lookupData.source || "none");
-            setNewItem({
-              name: lookupData.name || barcode,
-              description: lookupData.description || "",
-              quantity: 1,
-              bin: "",
-              row: "",
-              aisle: "",
-              zone: "",
-              unit: "",
-              category: lookupData.category || "",
-              condition: "GOOD",
-            });
-          } catch {
-            setLookupSource(null);
-            setNewItem({
-              name: barcode,
-              description: "",
-              quantity: 1,
-              bin: "",
-              row: "",
-              aisle: "",
-              zone: "",
-              unit: "",
-              category: "",
-              condition: "GOOD",
-            });
-          }
+          // Show dialog immediately with empty name
+          setLookupSource(null);
+          setNewItem({
+            name: "",
+            description: "",
+            quantity: 1,
+            bin: "",
+            row: "",
+            aisle: "",
+            zone: "",
+            unit: "",
+            category: "",
+            condition: "GOOD",
+          });
           setShowNewDialog(true);
+
+          // Lookup product name in background
+          fetch(`/api/lookup?barcode=${encodeURIComponent(barcode)}`)
+            .then(res => res.json())
+            .then(lookupData => {
+              setLookupSource(lookupData.source || "none");
+              setNewItem(prev => ({
+                ...prev,
+                name: lookupData.name || barcode,
+                description: lookupData.description || prev.description,
+                category: lookupData.category || prev.category,
+              }));
+            })
+            .catch(() => {
+              setNewItem(prev => ({
+                ...prev,
+                name: prev.name || barcode,
+              }));
+            });
         }
       }
     } catch {
@@ -652,6 +654,9 @@ export default function ScannerPage() {
               <Label htmlFor="item-name">
                 Name <span className="text-destructive">*</span>
               </Label>
+              {!newItem.name && (
+                <p className="text-xs text-muted-foreground animate-pulse">Looking up product info...</p>
+              )}
               <Input
                 id="item-name"
                 ref={nameInputRef}
@@ -664,7 +669,7 @@ export default function ScannerPage() {
                 placeholder="Item name"
                 className={!nameEdited ? "ring-2 ring-primary/50" : ""}
               />
-              {!nameEdited && (
+              {!nameEdited && newItem.name && (
                 <p className="text-xs text-muted-foreground">Tap to edit name</p>
               )}
             </div>
