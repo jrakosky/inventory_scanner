@@ -9,7 +9,6 @@ import {
   Plus,
   Package,
   Hash,
-  MapPin,
   Printer,
   Bluetooth,
   ScanBarcode,
@@ -43,7 +42,11 @@ interface ExistingItem {
   name: string;
   description: string | null;
   quantity: number;
-  location: string | null;
+  bin: string | null;
+  row: string | null;
+  aisle: string | null;
+  zone: string | null;
+  unit: string | null;
   category: string | null;
   condition: string;
 }
@@ -74,7 +77,11 @@ export default function ScannerPage() {
     name: "",
     description: "",
     quantity: 1,
-    location: "",
+    bin: "",
+    row: "",
+    aisle: "",
+    zone: "",
+    unit: "",
     category: "",
     condition: "GOOD",
   });
@@ -169,7 +176,11 @@ export default function ScannerPage() {
               name: lookupData.name || barcode,
               description: lookupData.description || "",
               quantity: 1,
-              location: "",
+              bin: "",
+              row: "",
+              aisle: "",
+              zone: "",
+              unit: "",
               category: lookupData.category || "",
               condition: "GOOD",
             });
@@ -179,7 +190,11 @@ export default function ScannerPage() {
               name: barcode,
               description: "",
               quantity: 1,
-              location: "",
+              bin: "",
+              row: "",
+              aisle: "",
+              zone: "",
+              unit: "",
               category: "",
               condition: "GOOD",
             });
@@ -706,16 +721,29 @@ export default function ScannerPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="item-bin">Bin</Label>
+                <Input id="item-bin" value={newItem.bin} onChange={(e) => setNewItem({ ...newItem, bin: e.target.value })} placeholder="Bin #" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="item-row">Row</Label>
+                <Input id="item-row" value={newItem.row} onChange={(e) => setNewItem({ ...newItem, row: e.target.value })} placeholder="Row #" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="item-aisle">Aisle</Label>
+                <Input id="item-aisle" value={newItem.aisle} onChange={(e) => setNewItem({ ...newItem, aisle: e.target.value })} placeholder="Aisle #" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="item-zone">Zone</Label>
+                <Input id="item-zone" value={newItem.zone} onChange={(e) => setNewItem({ ...newItem, zone: e.target.value })} placeholder="Zone" />
+              </div>
+            </div>
             <div className="space-y-2">
-              <Label htmlFor="item-location">Location</Label>
-              <Input
-                id="item-location"
-                value={newItem.location}
-                onChange={(e) =>
-                  setNewItem({ ...newItem, location: e.target.value })
-                }
-                placeholder="e.g. Warehouse A, Shelf 3"
-              />
+              <Label htmlFor="item-unit">Unit</Label>
+              <Input id="item-unit" value={newItem.unit} onChange={(e) => setNewItem({ ...newItem, unit: e.target.value })} placeholder="e.g. each, box, case, pallet" />
             </div>
 
             <div className="space-y-2">
@@ -788,12 +816,11 @@ export default function ScannerPage() {
                   <Badge variant="secondary">
                     Qty: {existingItem.quantity}
                   </Badge>
-                  {existingItem.location && (
-                    <Badge variant="outline">
-                      <MapPin className="mr-1 h-3 w-3" />
-                      {existingItem.location}
-                    </Badge>
-                  )}
+                  {existingItem.bin && <Badge variant="outline">Bin: {existingItem.bin}</Badge>}
+                  {existingItem.row && <Badge variant="outline">Row: {existingItem.row}</Badge>}
+                  {existingItem.aisle && <Badge variant="outline">Aisle: {existingItem.aisle}</Badge>}
+                  {existingItem.zone && <Badge variant="outline">Zone: {existingItem.zone}</Badge>}
+                  {existingItem.unit && <Badge variant="outline">Unit: {existingItem.unit}</Badge>}
                   <Badge variant="outline">{existingItem.condition}</Badge>
                 </div>
               </div>

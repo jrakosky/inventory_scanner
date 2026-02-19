@@ -28,7 +28,11 @@ interface InventoryItem {
   name: string;
   description: string | null;
   quantity: number;
-  location: string | null;
+  bin: string | null;
+  row: string | null;
+  aisle: string | null;
+  zone: string | null;
+  unit: string | null;
   category: string | null;
   condition: string;
 }
@@ -308,9 +312,9 @@ export default function LabelsPage() {
                   {showBarcode && previewItem && (
                     <svg ref={barcodeRef} style={{ maxWidth: "100%" }} />
                   )}
-                  {showLocation && previewItem?.location && (
+                  {showLocation && previewItem && [previewItem.zone, previewItem.aisle, previewItem.row, previewItem.bin].filter(Boolean).length > 0 && (
                     <div style={{ fontSize: "7px", color: "#666", fontFamily: "Arial, sans-serif" }}>
-                      {previewItem.location}
+                      {[previewItem.zone, previewItem.aisle, previewItem.row, previewItem.bin].filter(Boolean).join(" \u2192 ")}
                     </div>
                   )}
                   {showQty && previewItem && (
@@ -400,9 +404,9 @@ export default function LabelsPage() {
                             {item.barcode}
                           </p>
                         </div>
-                        {item.location && (
+                        {(item.zone || item.aisle || item.row || item.bin) && (
                           <span className="hidden text-xs text-muted-foreground sm:inline">
-                            {item.location}
+                            {[item.zone, item.aisle, item.row, item.bin].filter(Boolean).join(" \u2192 ")}
                           </span>
                         )}
                       </button>

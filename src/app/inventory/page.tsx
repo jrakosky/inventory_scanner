@@ -40,7 +40,11 @@ interface InventoryItem {
   name: string;
   description: string | null;
   quantity: number;
-  location: string | null;
+  bin: string | null;
+  row: string | null;
+  aisle: string | null;
+  zone: string | null;
+  unit: string | null;
   category: string | null;
   condition: string;
   minStock: number;
@@ -67,7 +71,11 @@ export default function InventoryPage() {
   // Edit state
   const [editName, setEditName] = useState("");
   const [editQuantity, setEditQuantity] = useState(0);
-  const [editLocation, setEditLocation] = useState("");
+  const [editBin, setEditBin] = useState("");
+  const [editRow, setEditRow] = useState("");
+  const [editAisle, setEditAisle] = useState("");
+  const [editZone, setEditZone] = useState("");
+  const [editUnit, setEditUnit] = useState("");
   const [editCondition, setEditCondition] = useState("GOOD");
   const [editDescription, setEditDescription] = useState("");
   const [saving, setSaving] = useState(false);
@@ -98,7 +106,11 @@ export default function InventoryPage() {
     setSelectedItem(item);
     setEditName(item.name);
     setEditQuantity(item.quantity);
-    setEditLocation(item.location || "");
+    setEditBin(item.bin || "");
+    setEditRow(item.row || "");
+    setEditAisle(item.aisle || "");
+    setEditZone(item.zone || "");
+    setEditUnit(item.unit || "");
     setEditCondition(item.condition);
     setEditDescription(item.description || "");
     setShowDetail(true);
@@ -116,7 +128,11 @@ export default function InventoryPage() {
           id: selectedItem.id,
           name: editName,
           quantity: editQuantity,
-          location: editLocation,
+          bin: editBin,
+          row: editRow,
+          aisle: editAisle,
+          zone: editZone,
+          unit: editUnit,
           condition: editCondition,
           description: editDescription,
         }),
@@ -303,10 +319,10 @@ export default function InventoryPage() {
                       {item.barcode}
                     </p>
                     <div className="mt-1 flex items-center gap-2">
-                      {item.location && (
+                      {(item.zone || item.aisle || item.row || item.bin) && (
                         <span className="flex items-center text-xs text-muted-foreground">
                           <MapPin className="mr-0.5 h-3 w-3" />
-                          {item.location}
+                          {[item.zone, item.aisle, item.row, item.bin].filter(Boolean).join(" \u2192 ")}
                         </span>
                       )}
                     </div>
@@ -342,8 +358,8 @@ export default function InventoryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/50 bg-muted/30">
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Barcode</th>
-                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Item ID</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Item Name</th>
                   <th className="px-4 py-3 text-right font-medium text-muted-foreground">Qty</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Location</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Condition</th>
@@ -385,7 +401,7 @@ export default function InventoryPage() {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">
-                        {item.location || "—"}
+                        {[item.zone, item.aisle, item.row, item.bin].filter(Boolean).join(" \u2192 ") || "—"}
                       </td>
                       <td className="px-4 py-3">
                         <Badge variant="outline">{item.condition}</Badge>
@@ -472,12 +488,27 @@ export default function InventoryPage() {
                 </Select>
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Bin</Label>
+                <Input value={editBin} onChange={(e) => setEditBin(e.target.value)} placeholder="B-12" />
+              </div>
+              <div className="space-y-2">
+                <Label>Row</Label>
+                <Input value={editRow} onChange={(e) => setEditRow(e.target.value)} placeholder="R-3" />
+              </div>
+              <div className="space-y-2">
+                <Label>Aisle</Label>
+                <Input value={editAisle} onChange={(e) => setEditAisle(e.target.value)} placeholder="A-1" />
+              </div>
+              <div className="space-y-2">
+                <Label>Zone</Label>
+                <Input value={editZone} onChange={(e) => setEditZone(e.target.value)} placeholder="Zone A" />
+              </div>
+            </div>
             <div className="space-y-2">
-              <Label>Location</Label>
-              <Input
-                value={editLocation}
-                onChange={(e) => setEditLocation(e.target.value)}
-              />
+              <Label>Unit</Label>
+              <Input value={editUnit} onChange={(e) => setEditUnit(e.target.value)} placeholder="each, box, pallet..." />
             </div>
           </div>
 
@@ -587,7 +618,7 @@ export default function InventoryPage() {
             <div className="rounded-lg border p-3 space-y-1">
               <p className="text-xs font-medium">Supported columns:</p>
               <p className="text-xs text-muted-foreground">
-                barcode/upc/sku (required), name/title (required), description, quantity/qty, location, category, condition, cost_price, min_stock
+                barcode/upc/sku (required), name/title (required), description, quantity/qty, bin, row, aisle, zone, unit, category, condition, cost_price, min_stock
               </p>
             </div>
 

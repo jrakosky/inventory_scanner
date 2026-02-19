@@ -74,7 +74,11 @@ export async function POST(req: NextRequest) {
     const nameCol = findColumn(headers, 'name', 'title', 'product_name', 'item_name', 'item');
     const descCol = findColumn(headers, 'description', 'desc', 'details');
     const qtyCol = findColumn(headers, 'quantity', 'qty', 'stock', 'count', 'on_hand');
-    const locationCol = findColumn(headers, 'location', 'loc', 'warehouse', 'shelf', 'bin');
+    const binCol = findColumn(headers, 'bin', 'shelf');
+    const rowCol = findColumn(headers, 'row');
+    const aisleCol = findColumn(headers, 'aisle');
+    const zoneCol = findColumn(headers, 'zone', 'warehouse', 'location', 'loc');
+    const unitCol = findColumn(headers, 'unit', 'uom', 'unit_of_measure');
     const categoryCol = findColumn(headers, 'category', 'cat', 'type', 'group', 'department');
     const conditionCol = findColumn(headers, 'condition', 'status');
     const costCol = findColumn(headers, 'cost_price', 'cost', 'price', 'unit_cost');
@@ -101,7 +105,11 @@ export async function POST(req: NextRequest) {
         name,
         description: descCol !== -1 ? row[descCol]?.trim() || null : null,
         quantity: qtyCol !== -1 ? parseInt(row[qtyCol]) || 1 : 1,
-        location: locationCol !== -1 ? row[locationCol]?.trim() || null : null,
+        bin: binCol !== -1 ? row[binCol]?.trim() || null : null,
+        row: rowCol !== -1 ? row[rowCol]?.trim() || null : null,
+        aisle: aisleCol !== -1 ? row[aisleCol]?.trim() || null : null,
+        zone: zoneCol !== -1 ? row[zoneCol]?.trim() || null : null,
+        unit: unitCol !== -1 ? row[unitCol]?.trim() || null : null,
         category: categoryCol !== -1 ? row[categoryCol]?.trim() || null : null,
         condition: condition as any,
         costPrice: costCol !== -1 && row[costCol] ? parseFloat(row[costCol]) || null : null,

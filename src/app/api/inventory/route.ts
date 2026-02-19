@@ -117,7 +117,11 @@ export async function PUT(req: NextRequest) {
       name: data.name,
       description: data.description,
       quantity: data.quantity,
-      location: data.location,
+      bin: data.bin,
+      row: data.row,
+      aisle: data.aisle,
+      zone: data.zone,
+      unit: data.unit,
       condition: data.condition,
     },
   });

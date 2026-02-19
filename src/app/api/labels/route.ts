@@ -66,8 +66,9 @@ export async function GET(req: NextRequest) {
       if (showBarcode) {
         parts.push(`<svg class="barcode" data-barcode="${escapeHtml(item.barcode)}" data-format="${escapeHtml(barcodeType)}" data-height="${barcodeHeight}"></svg>`);
       }
-      if (showLocation && item.location) {
-        parts.push(`<div style="font-size: 8pt; color: #666;">${escapeHtml(item.location)}</div>`);
+      const locationStr = [item.zone, item.aisle, item.row, item.bin].filter(Boolean).join(" \u2192 ");
+      if (showLocation && locationStr) {
+        parts.push(`<div style="font-size: 8pt; color: #666;">${escapeHtml(locationStr)}</div>`);
       }
       if (showQty) {
         parts.push(`<div style="font-size: 8pt;">Qty: ${item.quantity}</div>`);

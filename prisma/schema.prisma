@@ -25,7 +25,11 @@ model InventoryItem {
   name        String
   description String?   @db.Text
   quantity    Int       @default(0)
-  location    String?
+  bin         String?
+  row         String?
+  aisle       String?
+  zone        String?
+  unit        String?
   category    String?
   condition   Condition @default(GOOD)
   minStock    Int       @default(0)
@@ -40,6 +44,8 @@ model InventoryItem {
   @@index([barcode])
   @@index([name])
   @@index([category])
+  @@index([zone])
+  @@index([aisle])
 }
 
 model ScanLog {
