@@ -58,6 +58,11 @@ export default function InventoryPage() {
   const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importMode, setImportMode] = useState("skip");
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
 
   // Edit state
   const [editName, setEditName] = useState("");
@@ -227,10 +232,10 @@ export default function InventoryPage() {
           variant="outline"
           size="sm"
           className="flex-1"
-          onClick={() => setShowExport(true)}
+          onClick={() => setShowImport(true)}
         >
-          <Download className="mr-1.5 h-3.5 w-3.5" />
-          Export
+          <Upload className="mr-1.5 h-3.5 w-3.5" />
+          Import
         </Button>
         <Button
           variant="outline"
@@ -238,8 +243,8 @@ export default function InventoryPage() {
           className="flex-1"
           onClick={() => setShowExport(true)}
         >
-          <Upload className="mr-1.5 h-3.5 w-3.5" />
-          Sync to Sage
+          <Download className="mr-1.5 h-3.5 w-3.5" />
+          Export
         </Button>
       </div>
 
@@ -536,6 +541,109 @@ export default function InventoryPage() {
               </div>
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import CSV Dialog */}
+      <Dialog open={showImport} onOpenChange={(open) => { setShowImport(open); if (!open) { setImportResult(null); setImportFile(null); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Import Inventory from CSV</DialogTitle>
+            <DialogDescription>
+              Upload a CSV file with your product data. Required columns: barcode (or UPC/SKU) and name (or title).
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>CSV File</Label>
+              <Input
+                type="file"
+                accept=".csv,.tsv,.txt"
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Duplicate Handling</Label>
+              <Select value={importMode} onValueChange={setImportMode}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="skip">Skip existing items</SelectItem>
+                  <SelectItem value="update">Update existing items</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                What to do when a barcode already exists in inventory
+              </p>
+            </div>
+
+            <a href="/api/import/template" download className="text-xs text-primary hover:underline">
+              Download CSV template
+            </a>
+
+            <div className="rounded-lg border p-3 space-y-1">
+              <p className="text-xs font-medium">Supported columns:</p>
+              <p className="text-xs text-muted-foreground">
+                barcode/upc/sku (required), name/title (required), description, quantity/qty, location, category, condition, cost_price, min_stock
+              </p>
+            </div>
+
+            {importResult && (
+              <div className="rounded-lg border p-3 space-y-1">
+                <p className="text-sm font-medium">Import Complete</p>
+                <p className="text-xs text-emerald-600">Imported: {importResult.imported}</p>
+                {importResult.updated > 0 && <p className="text-xs text-blue-600">Updated: {importResult.updated}</p>}
+                {importResult.skipped > 0 && <p className="text-xs text-muted-foreground">Skipped: {importResult.skipped}</p>}
+                {importResult.errors?.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-xs text-destructive">Errors ({importResult.errors.length}):</p>
+                    <div className="max-h-24 overflow-y-auto">
+                      {importResult.errors.map((err: string, i: number) => (
+                        <p key={i} className="text-xs text-destructive">{err}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowImport(false)}>
+              {importResult ? "Close" : "Cancel"}
+            </Button>
+            {!importResult && (
+              <Button
+                onClick={async () => {
+                  if (!importFile) return;
+                  setImporting(true);
+                  const formData = new FormData();
+                  formData.append("file", importFile);
+                  formData.append("mode", importMode);
+                  try {
+                    const res = await fetch("/api/import/csv", { method: "POST", body: formData });
+                    const data = await res.json();
+                    if (res.ok) {
+                      setImportResult(data);
+                      fetchItems();
+                    } else {
+                      setImportResult({ imported: 0, errors: [data.error] });
+                    }
+                  } catch {
+                    setImportResult({ imported: 0, errors: ["Network error"] });
+                  } finally {
+                    setImporting(false);
+                  }
+                }}
+                disabled={!importFile || importing}
+              >
+                {importing ? "Importing..." : "Import"}
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
