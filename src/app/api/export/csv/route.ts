@@ -18,8 +18,8 @@ export async function GET(req: NextRequest) {
 
   // Build CSV
   const headers = [
-    "Barcode",
-    "Name",
+    "Item ID",
+    "Item Name",
     "Description",
     "Quantity",
     "Bin",
