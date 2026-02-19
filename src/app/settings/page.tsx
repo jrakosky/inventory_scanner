@@ -95,7 +95,7 @@ export default function SettingsPage() {
             </Button>
 
             {sageStatus === "connected" && (
-              <div className="flex items-center gap-1.5 text-sm text-emerald-400">
+              <div className="flex items-center gap-1.5 text-sm text-emerald-600">
                 <CheckCircle2 className="h-4 w-4" />
                 Connected
               </div>

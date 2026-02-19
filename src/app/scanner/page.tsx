@@ -358,8 +358,8 @@ export default function ScannerPage() {
         <div
           className={`fixed left-4 right-4 top-16 z-50 mx-auto max-w-lg animate-in slide-in-from-top-2 rounded-lg px-4 py-3 text-sm font-medium shadow-lg ${
             feedback.type === "success"
-              ? "bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30"
-              : "bg-destructive/15 text-destructive ring-1 ring-destructive/30"
+              ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200"
+              : "bg-red-50 text-red-700 ring-1 ring-red-200"
           }`}
         >
           <div className="flex items-center gap-2">
