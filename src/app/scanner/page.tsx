@@ -5,14 +5,14 @@ import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
 import {
   Camera,
   CameraOff,
-  Flashlight,
   Check,
   Plus,
   Package,
   Hash,
   MapPin,
-  MessageSquare,
   Printer,
+  Bluetooth,
+  ScanBarcode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +35,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 interface ExistingItem {
   id: string;
@@ -47,10 +48,11 @@ interface ExistingItem {
   condition: string;
 }
 
-type ScanMode = "idle" | "scanning" | "paused";
+type CameraMode = "idle" | "scanning" | "paused";
 
 export default function ScannerPage() {
-  const [scanMode, setScanMode] = useState<ScanMode>("idle");
+  const [activeTab, setActiveTab] = useState("scanner");
+  const [cameraMode, setCameraMode] = useState<CameraMode>("idle");
   const [lastBarcode, setLastBarcode] = useState<string | null>(null);
   const [existingItem, setExistingItem] = useState<ExistingItem | null>(null);
   const [showNewDialog, setShowNewDialog] = useState(false);
@@ -64,6 +66,8 @@ export default function ScannerPage() {
   const [lookupSource, setLookupSource] = useState<string | null>(null);
   const [nameEdited, setNameEdited] = useState(false);
   const [lastSavedItemId, setLastSavedItemId] = useState<string | null>(null);
+  const [scanDetected, setScanDetected] = useState(false);
+  const [scannerValue, setScannerValue] = useState("");
 
   // New item form
   const [newItem, setNewItem] = useState({
@@ -83,8 +87,16 @@ export default function ScannerPage() {
   const feedbackTimeout = useRef<NodeJS.Timeout | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
+  const scannerInputRef = useRef<HTMLInputElement>(null);
 
-  // Clean up on unmount
+  // Auto-focus scanner input on mount and tab switch
+  useEffect(() => {
+    if (activeTab === "scanner") {
+      setTimeout(() => scannerInputRef.current?.focus(), 100);
+    }
+  }, [activeTab]);
+
+  // Clean up camera on unmount
   useEffect(() => {
     return () => {
       if (scannerRef.current) {
@@ -112,43 +124,15 @@ export default function ScannerPage() {
     }
   }, [showExistingDialog]);
 
-  // Bluetooth/USB barcode scanner support - captures rapid keyboard input
+  // Refocus scanner input when dialogs close
   useEffect(() => {
-    let buffer = "";
-    let lastKeyTime = 0;
-    let timeout: NodeJS.Timeout;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const now = Date.now();
-
-      // If typing into an input field, skip
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-
-      if (e.key === "Enter" && buffer.length >= 4) {
-        e.preventDefault();
-        const barcode = buffer;
-        buffer = "";
-        onScanSuccess(barcode);
-        return;
-      }
-
-      // Single printable character
-      if (e.key.length === 1) {
-        if (now - lastKeyTime > 100) buffer = "";
-        buffer += e.key;
-        lastKeyTime = now;
-        clearTimeout(timeout);
-        timeout = setTimeout(() => { buffer = ""; }, 200);
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      clearTimeout(timeout);
-    };
-  }, []);
+    if (!showNewDialog && !showExistingDialog && activeTab === "scanner") {
+      setTimeout(() => {
+        setScannerValue("");
+        scannerInputRef.current?.focus();
+      }, 200);
+    }
+  }, [showNewDialog, showExistingDialog, activeTab]);
 
   const showFeedback = useCallback(
     (type: "success" | "error", message: string) => {
@@ -159,9 +143,74 @@ export default function ScannerPage() {
     []
   );
 
+  // ─── Shared barcode processing ───────────────────────────────
+
+  const processBarcode = async (barcode: string) => {
+    setLastBarcode(barcode);
+    if (navigator.vibrate) navigator.vibrate(100);
+
+    try {
+      const res = await fetch(
+        `/api/inventory?barcode=${encodeURIComponent(barcode)}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (data.item) {
+          setExistingItem(data.item);
+          setAddQuantity(1);
+          setNotes("");
+          setShowExistingDialog(true);
+        } else {
+          try {
+            const lookupRes = await fetch(`/api/lookup?barcode=${encodeURIComponent(barcode)}`);
+            const lookupData = await lookupRes.json();
+            setLookupSource(lookupData.source || "none");
+            setNewItem({
+              name: lookupData.name || barcode,
+              description: lookupData.description || "",
+              quantity: 1,
+              location: "",
+              category: lookupData.category || "",
+              condition: "GOOD",
+            });
+          } catch {
+            setLookupSource(null);
+            setNewItem({
+              name: barcode,
+              description: "",
+              quantity: 1,
+              location: "",
+              category: "",
+              condition: "GOOD",
+            });
+          }
+          setShowNewDialog(true);
+        }
+      }
+    } catch {
+      showFeedback("error", "Network error. Please try again.");
+      if (activeTab === "camera") resumeScanning();
+    }
+  };
+
+  // ─── Scanner mode (Bluetooth/USB) ────────────────────────────
+
+  const handleScannerInput = async (barcode: string) => {
+    if (!barcode.trim()) return;
+    setScanDetected(true);
+    setTimeout(() => setScanDetected(false), 800);
+    setScanCount((c) => c + 1);
+    await processBarcode(barcode.trim());
+  };
+
+  // ─── Camera mode ─────────────────────────────────────────────
+
   const startScanning = async () => {
     try {
-      const scanner = new Html5Qrcode("scanner-viewport", { formatsToSupport: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], verbose: false });
+      const scanner = new Html5Qrcode("scanner-viewport", {
+        formatsToSupport: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+        verbose: false,
+      });
       scannerRef.current = scanner;
 
       await scanner.start(
@@ -172,11 +221,11 @@ export default function ScannerPage() {
           aspectRatio: 1.0,
           disableFlip: false,
         },
-        onScanSuccess,
-        () => {} // ignore scan failures (expected when no barcode in frame)
+        onCameraScanSuccess,
+        () => {}
       );
 
-      setScanMode("scanning");
+      setCameraMode("scanning");
     } catch (err) {
       console.error("Camera error:", err);
       showFeedback("error", "Could not access camera. Check permissions.");
@@ -190,67 +239,19 @@ export default function ScannerPage() {
       } catch {}
       scannerRef.current = null;
     }
-    setScanMode("idle");
+    setCameraMode("idle");
   };
 
-  const onScanSuccess = async (decodedText: string) => {
-    // Pause scanner while handling result
+  const onCameraScanSuccess = async (decodedText: string) => {
     if (scannerRef.current) {
       try {
         await scannerRef.current.stop();
       } catch {}
       scannerRef.current = null;
     }
-    setScanMode("paused");
-    setLastBarcode(decodedText);
-
-    // Vibrate for haptic feedback
-    if (navigator.vibrate) navigator.vibrate(100);
-
-    // Check if item exists
-    try {
-      const res = await fetch(
-        `/api/inventory?barcode=${encodeURIComponent(decodedText)}`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (data.item) {
-          setExistingItem(data.item);
-          setAddQuantity(1);
-          setNotes("");
-          setShowExistingDialog(true);
-        } else {
-          // Look up product info from barcode databases
-          try {
-            const lookupRes = await fetch(`/api/lookup?barcode=${encodeURIComponent(decodedText)}`);
-            const lookupData = await lookupRes.json();
-            setLookupSource(lookupData.source || "none");
-            setNewItem({
-              name: lookupData.name || decodedText,
-              description: lookupData.description || "",
-              quantity: 1,
-              location: "",
-              category: lookupData.category || "",
-              condition: "GOOD",
-            });
-          } catch {
-            setLookupSource(null);
-            setNewItem({
-              name: decodedText,
-              description: "",
-              quantity: 1,
-              location: "",
-              category: "",
-              condition: "GOOD",
-            });
-          }
-          setShowNewDialog(true);
-        }
-      }
-    } catch (err) {
-      showFeedback("error", "Network error. Please try again.");
-      resumeScanning();
-    }
+    setCameraMode("paused");
+    setScanCount((c) => c + 1);
+    await processBarcode(decodedText);
   };
 
   const resumeScanning = async () => {
@@ -260,9 +261,11 @@ export default function ScannerPage() {
       } catch {}
       scannerRef.current = null;
     }
-    setScanMode("idle");
+    setCameraMode("idle");
     setTimeout(() => startScanning(), 500);
   };
+
+  // ─── Shared actions ──────────────────────────────────────────
 
   const printLabel = (itemId: string) => {
     const params = new URLSearchParams({
@@ -299,7 +302,6 @@ export default function ScannerPage() {
       if (res.ok) {
         const data = await res.json();
         setLastSavedItemId(data.item?.id || null);
-        setScanCount((c) => c + 1);
         showFeedback("success", `Added "${newItem.name}" to inventory`);
         setShowNewDialog(false);
       } else {
@@ -310,7 +312,7 @@ export default function ScannerPage() {
       showFeedback("error", "Network error");
     } finally {
       setSaving(false);
-      resumeScanning();
+      if (activeTab === "camera") resumeScanning();
     }
   };
 
@@ -333,7 +335,6 @@ export default function ScannerPage() {
       if (res.ok) {
         const data = await res.json();
         setLastSavedItemId(data.item?.id || null);
-        setScanCount((c) => c + 1);
         showFeedback(
           "success",
           `Updated "${existingItem.name}" (+${addQuantity})`
@@ -347,8 +348,20 @@ export default function ScannerPage() {
       showFeedback("error", "Network error");
     } finally {
       setSaving(false);
-      resumeScanning();
+      if (activeTab === "camera") resumeScanning();
     }
+  };
+
+  // Stop camera when switching away from camera tab
+  const handleTabChange = async (value: string) => {
+    if (value !== "camera" && scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+      } catch {}
+      scannerRef.current = null;
+      setCameraMode("idle");
+    }
+    setActiveTab(value);
   };
 
   return (
@@ -371,114 +384,225 @@ export default function ScannerPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Scanner Viewport Column */}
-        <div className="space-y-4 md:max-w-md">
-          <Card className="overflow-hidden border-border/50">
-            <CardContent className="p-0">
-              <div className="relative aspect-square w-full bg-black/50">
-                <div id="scanner-viewport" className="h-full w-full" />
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="w-full">
+          <TabsTrigger value="scanner" className="flex-1 gap-2">
+            <Bluetooth className="h-4 w-4" />
+            Scanner
+          </TabsTrigger>
+          <TabsTrigger value="camera" className="flex-1 gap-2">
+            <Camera className="h-4 w-4" />
+            Camera
+          </TabsTrigger>
+        </TabsList>
 
-                {scanMode === "scanning" && (
-                  <div className="scan-line pointer-events-none absolute inset-x-0" />
-                )}
-
-                {scanMode === "idle" && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-muted/50">
-                    <Camera className="h-12 w-12 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Tap below to start scanning
-                    </p>
-                  </div>
-                )}
-
-                {scanMode === "paused" && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                    <div className="rounded-full bg-primary/20 p-4">
-                      <Check className="h-8 w-8 text-primary" />
+        {/* ─── Scanner Tab ──────────────────────────────── */}
+        <TabsContent value="scanner">
+          <div className="mx-auto max-w-lg space-y-4 pt-2">
+            {/* Status Hero */}
+            <Card
+              className={`border-border/50 transition-all duration-300 ${
+                scanDetected
+                  ? "border-emerald-300 bg-emerald-50"
+                  : ""
+              }`}
+            >
+              <CardContent className="flex flex-col items-center py-8 gap-3">
+                {scanDetected ? (
+                  <>
+                    <div className="rounded-full bg-emerald-100 p-4">
+                      <Check className="h-8 w-8 text-emerald-600" />
                     </div>
+                    <div className="text-center">
+                      <p className="text-lg font-semibold text-emerald-700">
+                        Barcode Detected!
+                      </p>
+                      <p className="text-sm text-emerald-600">Processing...</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="rounded-full bg-primary/10 p-4">
+                      <Bluetooth className="h-8 w-8 text-primary" />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg font-semibold">Scanner Ready</p>
+                      <p className="text-sm text-muted-foreground">
+                        Scan a barcode with your wireless scanner
+                      </p>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Barcode Input */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleScannerInput(scannerValue);
+              }}
+            >
+              <div className="relative">
+                <ScanBarcode className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  ref={scannerInputRef}
+                  value={scannerValue}
+                  onChange={(e) => setScannerValue(e.target.value)}
+                  placeholder="Scan or type barcode..."
+                  className="h-14 pl-12 text-lg ring-2 ring-primary/30 focus-visible:ring-primary/60"
+                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                  autoFocus
+                />
+              </div>
+            </form>
+
+            {/* Session Info */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
+                <span className="text-sm text-muted-foreground">
+                  Session scans
+                </span>
+                <Badge variant="secondary">
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                    {scanCount}
+                  </span>
+                </Badge>
+              </div>
+
+              {lastBarcode && (
+                <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
+                  <span className="text-sm text-muted-foreground">
+                    Last barcode
+                  </span>
+                  <span
+                    className="text-sm font-medium"
+                    style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                  >
+                    {lastBarcode}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ─── Camera Tab ───────────────────────────────── */}
+        <TabsContent value="camera">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            {/* Scanner Viewport Column */}
+            <div className="space-y-4 md:max-w-md">
+              <Card className="overflow-hidden border-border/50">
+                <CardContent className="p-0">
+                  <div className="relative aspect-square w-full bg-black/50">
+                    <div id="scanner-viewport" className="h-full w-full" />
+
+                    {cameraMode === "scanning" && (
+                      <div className="scan-line pointer-events-none absolute inset-x-0" />
+                    )}
+
+                    {cameraMode === "idle" && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-muted/50">
+                        <Camera className="h-12 w-12 text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">
+                          Tap below to start scanning
+                        </p>
+                      </div>
+                    )}
+
+                    {cameraMode === "paused" && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                        <div className="rounded-full bg-primary/20 p-4">
+                          <Check className="h-8 w-8 text-primary" />
+                        </div>
+                      </div>
+                    )}
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Controls */}
+              <div className="flex gap-3">
+                {cameraMode === "idle" ? (
+                  <Button onClick={startScanning} className="flex-1" size="lg">
+                    <Camera className="mr-2 h-5 w-5" />
+                    Start Camera
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={stopScanning}
+                    variant="destructive"
+                    className="flex-1"
+                    size="lg"
+                  >
+                    <CameraOff className="mr-2 h-5 w-5" />
+                    Stop Camera
+                  </Button>
                 )}
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Controls */}
-          <div className="flex gap-3">
-            {scanMode === "idle" ? (
-              <Button onClick={startScanning} className="flex-1" size="lg">
-                <Camera className="mr-2 h-5 w-5" />
-                Start Scanner
-              </Button>
-            ) : (
-              <Button
-                onClick={stopScanning}
-                variant="destructive"
-                className="flex-1"
-                size="lg"
-              >
-                <CameraOff className="mr-2 h-5 w-5" />
-                Stop Scanner
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {/* Info / Controls Column */}
-        <div className="space-y-4">
-          {/* Session Info */}
-          <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
-            <span className="text-sm text-muted-foreground">Session scans</span>
-            <Badge variant="secondary">
-              <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                {scanCount}
-              </span>
-            </Badge>
-          </div>
-
-          {lastBarcode && (
-            <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
-              <span className="text-sm text-muted-foreground">Last barcode</span>
-              <span
-                className="text-sm font-medium"
-                style={{ fontFamily: "'JetBrains Mono', monospace" }}
-              >
-                {lastBarcode}
-              </span>
             </div>
-          )}
 
-          {/* Manual Entry */}
-          <Card className="border-border/50">
-            <CardContent className="p-4">
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const form = e.target as HTMLFormElement;
-                  const input = form.elements.namedItem(
-                    "manual-barcode"
-                  ) as HTMLInputElement;
-                  if (input.value.trim()) {
-                    onScanSuccess(input.value.trim());
-                    input.value = "";
-                  }
-                }}
-                className="flex gap-2"
-              >
-                <Input
-                  name="manual-barcode"
-                  placeholder="Enter barcode manually..."
-                  className="flex-1"
-                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                />
-                <Button type="submit" variant="secondary">
-                  <Hash className="h-4 w-4" />
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            {/* Info / Controls Column */}
+            <div className="space-y-4">
+              {/* Session Info */}
+              <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
+                <span className="text-sm text-muted-foreground">
+                  Session scans
+                </span>
+                <Badge variant="secondary">
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                    {scanCount}
+                  </span>
+                </Badge>
+              </div>
+
+              {lastBarcode && (
+                <div className="flex items-center justify-between rounded-lg border border-border/50 px-4 py-3">
+                  <span className="text-sm text-muted-foreground">
+                    Last barcode
+                  </span>
+                  <span
+                    className="text-sm font-medium"
+                    style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                  >
+                    {lastBarcode}
+                  </span>
+                </div>
+              )}
+
+              {/* Manual Entry */}
+              <Card className="border-border/50">
+                <CardContent className="p-4">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const form = e.target as HTMLFormElement;
+                      const input = form.elements.namedItem(
+                        "manual-barcode"
+                      ) as HTMLInputElement;
+                      if (input.value.trim()) {
+                        onCameraScanSuccess(input.value.trim());
+                        input.value = "";
+                      }
+                    }}
+                    className="flex gap-2"
+                  >
+                    <Input
+                      name="manual-barcode"
+                      placeholder="Enter barcode manually..."
+                      className="flex-1"
+                      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+                    />
+                    <Button type="submit" variant="secondary">
+                      <Hash className="h-4 w-4" />
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {/* New Item Dialog */}
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
@@ -612,7 +736,7 @@ export default function ScannerPage() {
               variant="outline"
               onClick={() => {
                 setShowNewDialog(false);
-                resumeScanning();
+                if (activeTab === "camera") resumeScanning();
               }}
             >
               Cancel
@@ -705,7 +829,7 @@ export default function ScannerPage() {
               variant="outline"
               onClick={() => {
                 setShowExistingDialog(false);
-                resumeScanning();
+                if (activeTab === "camera") resumeScanning();
               }}
             >
               Skip
