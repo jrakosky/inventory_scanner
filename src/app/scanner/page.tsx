@@ -61,6 +61,7 @@ export default function ScannerPage() {
   } | null>(null);
   const [scanCount, setScanCount] = useState(0);
   const [lookupSource, setLookupSource] = useState<string | null>(null);
+  const [nameEdited, setNameEdited] = useState(false);
 
   // New item form
   const [newItem, setNewItem] = useState({
@@ -98,6 +99,7 @@ export default function ScannerPage() {
 
   useEffect(() => {
     if (showNewDialog) {
+      setNameEdited(false);
       setTimeout(() => nameInputRef.current?.focus(), 300);
     }
   }, [showNewDialog]);
@@ -484,7 +486,7 @@ export default function ScannerPage() {
           </DialogHeader>
 
           <div className="space-y-4">
-            <div className="space-y-2">
+            <div className="space-y-1">
               <Label htmlFor="item-name">
                 Name <span className="text-destructive">*</span>
               </Label>
@@ -492,12 +494,17 @@ export default function ScannerPage() {
                 id="item-name"
                 ref={nameInputRef}
                 value={newItem.name}
-                onChange={(e) =>
-                  setNewItem({ ...newItem, name: e.target.value })
-                }
+                onChange={(e) => {
+                  setNewItem({ ...newItem, name: e.target.value });
+                  setNameEdited(true);
+                }}
+                onFocus={() => setNameEdited(true)}
                 placeholder="Item name"
-                autoFocus
+                className={!nameEdited ? "ring-2 ring-primary/50" : ""}
               />
+              {!nameEdited && (
+                <p className="text-xs text-muted-foreground">Tap to edit name</p>
+              )}
             </div>
 
             <div className="space-y-2">
