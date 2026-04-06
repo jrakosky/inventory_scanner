@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ScanBarcode, LayoutDashboard, Package, Tag, ClipboardCheck, Settings, LogOut } from "lucide-react";
+import { ScanBarcode, LayoutDashboard, Package, Tag, ClipboardCheck, ListTodo, Settings, LogOut } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,7 @@ const navItems = [
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/cycle-count", label: "Count", icon: ClipboardCheck },
   { href: "/labels", label: "Labels", icon: Tag },
+  { href: "/todos", label: "To-Do", icon: ListTodo },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

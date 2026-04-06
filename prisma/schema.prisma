@@ -19,6 +19,7 @@ model User {
   inventoryItems     InventoryItem[]
   cycleCountsCreated CycleCount[]
   cycleCountEntries  CycleCountEntry[] @relation("CountedByUser")
+  todos              Todo[]
 }
 
 model InventoryItem {
@@ -141,4 +142,32 @@ enum EntryStatus {
   PENDING
   COUNTED
   SKIPPED
+}
+
+model Todo {
+  id          String       @id @default(cuid())
+  title       String
+  description String?      @db.Text
+  priority    TodoPriority @default(MEDIUM)
+  status      TodoStatus   @default(TODO)
+  createdBy   User         @relation(fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([status])
+  @@index([priority])
+}
+
+enum TodoPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TodoStatus {
+  TODO
+  IN_PROGRESS
+  DONE
 }
