@@ -61,5 +61,9 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Run migrations then start
-CMD ["sh", "-c", "npx prisma@6 db push && node server.js"]
+# Run migrations then start.
+# --accept-data-loss is pragmatic for pre-handoff iteration on a non-critical DB.
+# Switch to `npx prisma migrate deploy` with proper migration files once the
+# schema stabilizes in production. See README → Cycle count reconciliation
+# guardrails for context on why this flag is a footgun long-term.
+CMD ["sh", "-c", "npx prisma@6 db push --accept-data-loss && node server.js"]
