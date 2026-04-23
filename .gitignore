@@ -5,3 +5,7 @@ node_modules/
 *.log
 dist/
 .DS_Store
+
+# Build artifacts
+tsconfig.tsbuildinfo
+next-env.d.ts
