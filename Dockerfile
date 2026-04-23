@@ -26,6 +26,11 @@ RUN npx prisma generate
 
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
+# Next.js webpack compilation can OOM in constrained build environments
+# (Coolify's build container was silently killed at "Creating an
+# optimized production build ..." with no error output). Raise Node's
+# old-space heap to avoid that.
+ENV NODE_OPTIONS=--max-old-space-size=4096
 
 RUN npm run build
 
