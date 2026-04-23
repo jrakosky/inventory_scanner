@@ -6,10 +6,23 @@ export const metadata: Metadata = {
   title: "Inventory Scanner",
   description: "Scan barcodes and manage inventory from your phone",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "InvScan",
+  },
+  other: {
+    // Standardized successor to apple-mobile-web-app-capable — browsers warn
+    // without this.
+    "mobile-web-app-capable": "yes",
   },
 };
 
