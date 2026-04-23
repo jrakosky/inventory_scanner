@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import {
   Plug,
   User,
+  Users as UsersIcon,
   Database,
   CheckCircle2,
   XCircle,
@@ -13,16 +14,22 @@ import {
   History,
   Link as LinkIcon,
   Unlink,
-  Building2,
   Plus,
   Trash2,
-  Power,
-  PowerOff,
+  Pencil,
+  KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 
 interface IntacctStatus {
   configured: boolean;
@@ -33,11 +40,12 @@ interface IntacctStatus {
   cycleCountCount?: number;
 }
 
-interface Warehouse {
+interface ManagedUser {
   id: string;
-  name: string;
-  active: boolean;
-  intacctKey: string | null;
+  name: string | null;
+  email: string;
+  role: "USER" | "ADMIN";
+  createdAt: string;
 }
 
 export default function SettingsPage() {
@@ -49,10 +57,20 @@ export default function SettingsPage() {
   const [sageMessage, setSageMessage] = useState("");
   const [intacct, setIntacct] = useState<IntacctStatus | null>(null);
   const [intacctLoading, setIntacctLoading] = useState(true);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [newWarehouseName, setNewWarehouseName] = useState("");
-  const [warehouseError, setWarehouseError] = useState("");
-  const [warehousesLoading, setWarehousesLoading] = useState(true);
+  const currentUserId = (session?.user as any)?.id;
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [editUser, setEditUser] = useState<ManagedUser | null>(null);
+  const [userForm, setUserForm] = useState({
+    email: "",
+    name: "",
+    password: "",
+    role: "USER" as "USER" | "ADMIN",
+  });
+  const [userFormError, setUserFormError] = useState("");
+  const [userFormSaving, setUserFormSaving] = useState(false);
+
   const isAdmin = (session?.user as any)?.role === "ADMIN";
 
   const testSageConnection = async () => {
@@ -84,60 +102,90 @@ export default function SettingsPage() {
     setIntacctLoading(false);
   }, []);
 
-  const fetchWarehouses = useCallback(async () => {
-    setWarehousesLoading(true);
+  const fetchUsers = useCallback(async () => {
+    setUsersLoading(true);
     try {
-      const res = await fetch("/api/warehouses");
+      const res = await fetch("/api/users");
       const data = await res.json();
-      setWarehouses(data.warehouses || []);
+      setUsers(data.users || []);
     } catch {}
-    setWarehousesLoading(false);
+    setUsersLoading(false);
   }, []);
 
   useEffect(() => {
     fetchIntacctStatus();
-    fetchWarehouses();
-  }, [fetchIntacctStatus, fetchWarehouses]);
+    fetchUsers();
+  }, [fetchIntacctStatus, fetchUsers]);
 
-  const intacctCallbackStatus = searchParams.get("intacct");
-  const intacctCallbackMessage = searchParams.get("message");
+  const resetUserForm = () => {
+    setUserForm({ email: "", name: "", password: "", role: "USER" });
+    setUserFormError("");
+  };
 
-  const handleCreateWarehouse = async () => {
-    setWarehouseError("");
-    if (!newWarehouseName.trim()) return;
-    const res = await fetch("/api/warehouses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newWarehouseName }),
-    });
-    if (res.ok) {
-      setNewWarehouseName("");
-      fetchWarehouses();
-    } else {
-      const err = await res.json();
-      setWarehouseError(err.error || "Failed to add warehouse");
+  const handleOpenAddUser = () => {
+    resetUserForm();
+    setEditUser(null);
+    setShowAddUser(true);
+  };
+
+  const handleOpenEditUser = (u: ManagedUser) => {
+    setUserForm({ email: u.email, name: u.name || "", password: "", role: u.role });
+    setUserFormError("");
+    setEditUser(u);
+    setShowAddUser(false);
+  };
+
+  const handleSaveUser = async () => {
+    setUserFormError("");
+    setUserFormSaving(true);
+    try {
+      let res: Response;
+      if (editUser) {
+        res = await fetch("/api/users", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editUser.id,
+            name: userForm.name,
+            role: userForm.role,
+            password: userForm.password || undefined,
+          }),
+        });
+      } else {
+        res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(userForm),
+        });
+      }
+      if (res.ok) {
+        setShowAddUser(false);
+        setEditUser(null);
+        resetUserForm();
+        fetchUsers();
+      } else {
+        const err = await res.json();
+        setUserFormError(err.error || "Failed");
+      }
+    } catch {
+      setUserFormError("Network error");
     }
+    setUserFormSaving(false);
   };
 
-  const handleToggleWarehouse = async (w: Warehouse) => {
-    await fetch("/api/warehouses", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: w.id, active: !w.active }),
-    });
-    fetchWarehouses();
-  };
-
-  const handleDeleteWarehouse = async (w: Warehouse) => {
-    if (!confirm(`Delete warehouse "${w.name}"?`)) return;
-    const res = await fetch(`/api/warehouses?id=${w.id}`, { method: "DELETE" });
+  const handleDeleteUser = async (u: ManagedUser) => {
+    if (!confirm(`Delete user ${u.email}? This can't be undone.`)) return;
+    const res = await fetch(`/api/users?id=${u.id}`, { method: "DELETE" });
     if (!res.ok) {
       const err = await res.json();
       alert(err.error || "Could not delete");
       return;
     }
-    fetchWarehouses();
+    fetchUsers();
   };
+
+  const intacctCallbackStatus = searchParams.get("intacct");
+  const intacctCallbackMessage = searchParams.get("message");
 
   const handleDisconnect = async () => {
     if (!confirm("Disconnect from Sage Intacct? You'll need to re-authorize.")) return;
@@ -174,6 +222,78 @@ export default function SettingsPage() {
               {(session?.user as any)?.role || "USER"}
             </Badge>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* User Accounts (admin) */}
+      <Card className="border-border/50">
+        <CardHeader className="pb-3 flex-row items-center justify-between space-y-0">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <UsersIcon className="h-4 w-4 text-primary" />
+            User accounts
+          </CardTitle>
+          {isAdmin && (
+            <Button size="sm" onClick={handleOpenAddUser}>
+              <Plus className="mr-1 h-3.5 w-3.5" /> Add user
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {usersLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading...
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {users.map(u => (
+                <div key={u.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">
+                      {u.name || u.email}
+                      {u.id === currentUserId && (
+                        <span className="ml-2 text-xs text-muted-foreground">(you)</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant={u.role === "ADMIN" ? "default" : "secondary"}>
+                      {u.role}
+                    </Badge>
+                    {isAdmin && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleOpenEditUser(u)}
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteUser(u)}
+                          disabled={u.id === currentUserId}
+                          title={u.id === currentUserId ? "You can't delete yourself" : "Delete"}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {users.length === 0 && (
+                <p className="text-sm text-muted-foreground">No users found.</p>
+              )}
+            </div>
+          )}
+          <p className="pt-2 text-xs text-muted-foreground">
+            <KeyRound className="mr-1 inline h-3 w-3" />
+            Everyone (including admins) can change their own password on the <a href="/account" className="underline">My Account</a> page.
+          </p>
         </CardContent>
       </Card>
 
@@ -328,90 +448,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Warehouses */}
-      <Card className="border-border/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Building2 className="h-4 w-4 text-primary" />
-            Warehouses
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Warehouses are required for cycle counts. They'll sync from Sage once connected — for now, add names that match what's in Sage.
-          </p>
-
-          {warehousesLoading ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Loading...
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {warehouses.map(w => (
-                <div key={w.id} className="flex items-center justify-between rounded-md border px-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    <p className={`text-sm font-medium ${!w.active ? "text-muted-foreground line-through" : ""}`}>
-                      {w.name}
-                    </p>
-                    {w.intacctKey && (
-                      <p className="text-xs text-muted-foreground">Intacct: {w.intacctKey}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {!w.active && <Badge variant="outline" className="mr-2">Inactive</Badge>}
-                    {isAdmin && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleToggleWarehouse(w)}
-                          title={w.active ? "Deactivate" : "Activate"}
-                        >
-                          {w.active ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDeleteWarehouse(w)}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {warehouses.length === 0 && (
-                <p className="text-sm text-muted-foreground">No warehouses yet.</p>
-              )}
-            </div>
-          )}
-
-          {isAdmin && (
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <Input
-                  value={newWarehouseName}
-                  onChange={e => setNewWarehouseName(e.target.value)}
-                  placeholder="New warehouse name"
-                  onKeyDown={e => {
-                    if (e.key === "Enter") { e.preventDefault(); handleCreateWarehouse(); }
-                  }}
-                />
-                <Button onClick={handleCreateWarehouse} disabled={!newWarehouseName.trim()}>
-                  <Plus className="mr-1 h-4 w-4" /> Add
-                </Button>
-              </div>
-              {warehouseError && (
-                <p className="text-xs text-destructive">{warehouseError}</p>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Database */}
       <Card className="border-border/50">
         <CardHeader className="pb-3">
@@ -456,6 +492,106 @@ export default function SettingsPage() {
         <p>InvScan v1.0.0</p>
         <p>Next.js + shadcn/ui + MariaDB + Prisma</p>
       </div>
+
+      {/* Add/Edit User dialog */}
+      <Dialog
+        open={showAddUser || !!editUser}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowAddUser(false);
+            setEditUser(null);
+            resetUserForm();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editUser ? "Edit user" : "Add user"}</DialogTitle>
+            <DialogDescription>
+              {editUser
+                ? "Update the user's display name, role, or reset their password."
+                : "Create a new account. Give them an initial password — they can change it on the My Account page."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Email</Label>
+              <Input
+                type="email"
+                value={userForm.email}
+                onChange={e => setUserForm({ ...userForm, email: e.target.value })}
+                disabled={!!editUser}
+                placeholder="user@example.com"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Display name</Label>
+              <Input
+                value={userForm.name}
+                onChange={e => setUserForm({ ...userForm, name: e.target.value })}
+                placeholder="Optional"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Role</Label>
+              <Select
+                value={userForm.role}
+                onValueChange={(v: "USER" | "ADMIN") => setUserForm({ ...userForm, role: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="USER">User</SelectItem>
+                  <SelectItem value="ADMIN">Admin</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Admins see Settings. Users don't.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label>
+                {editUser ? "Reset password (leave blank to keep)" : "Initial password"}
+              </Label>
+              <Input
+                type="password"
+                value={userForm.password}
+                onChange={e => setUserForm({ ...userForm, password: e.target.value })}
+                placeholder={editUser ? "Leave blank to keep existing" : "Min 8 characters"}
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+
+          {userFormError && (
+            <p className="text-sm text-destructive">{userFormError}</p>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowAddUser(false);
+                setEditUser(null);
+                resetUserForm();
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveUser}
+              disabled={
+                userFormSaving ||
+                (!editUser && (!userForm.email || !userForm.password))
+              }
+            >
+              {userFormSaving ? "Saving..." : editUser ? "Save changes" : "Create user"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
