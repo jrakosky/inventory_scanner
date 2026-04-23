@@ -35,7 +35,7 @@ export default function WarehousesLayout({
       <Sidebar />
       <div className="sidebar-offset">
         <TopBar title="Warehouses" />
-        <main className="mx-auto max-w-3xl px-4 py-4">{children}</main>
+        <main className="mx-auto max-w-5xl px-4 py-4">{children}</main>
       </div>
       <BottomNav />
     </div>
