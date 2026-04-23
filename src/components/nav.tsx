@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { ScanBarcode, LayoutDashboard, Package, Tag, ClipboardCheck, ListTodo, Settings, LogOut, UserCircle, Building2 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
@@ -68,12 +67,10 @@ export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 z-50 hidden h-screen w-64 flex-col border-r border-border/40 bg-background/95 backdrop-blur-xl md:flex">
       <div className="flex h-16 items-center border-b border-border/40 px-4">
-        <Image
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
           src="/sna-logo.svg"
           alt="Safety NetAccess"
-          width={220}
-          height={54}
-          priority
           className="h-10 w-auto"
         />
       </div>
@@ -130,12 +127,10 @@ export function TopBar({ title }: { title: string }) {
     <header className="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <Image
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src="/favicon.svg"
             alt="Safety NetAccess"
-            width={24}
-            height={24}
-            priority
             className="h-6 w-6 md:hidden"
           />
           <h1

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,12 +43,10 @@ export default function LoginPage() {
       <Card className="relative w-full max-w-sm border-border/50 bg-card/50 backdrop-blur-sm">
         <CardHeader className="space-y-4 text-center">
           <div className="flex justify-center">
-            <Image
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src="/sna-logo.svg"
               alt="Safety NetAccess"
-              width={260}
-              height={64}
-              priority
               className="h-16 w-auto"
             />
           </div>
