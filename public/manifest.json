@@ -4,12 +4,12 @@
   "description": "Scan barcodes and manage inventory from your phone",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#f8f8f8",
-  "theme_color": "#f8f8f8",
+  "background_color": "#ffffff",
+  "theme_color": "#8b2333",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { ScanBarcode, Loader2 } from "lucide-react";
+import Image from "next/image";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,15 +43,19 @@ export default function LoginPage() {
 
       <Card className="relative w-full max-w-sm border-border/50 bg-card/50 backdrop-blur-sm">
         <CardHeader className="space-y-4 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 ring-1 ring-primary/20">
-            <ScanBarcode className="h-7 w-7 text-primary" />
+          <div className="flex justify-center">
+            <Image
+              src="/sna-logo.svg"
+              alt="Safety NetAccess"
+              width={260}
+              height={64}
+              priority
+              className="h-16 w-auto"
+            />
           </div>
           <div>
-            <CardTitle
-              className="text-2xl tracking-tight"
-              style={{ fontFamily: "'JetBrains Mono', monospace" }}
-            >
-              InvScan
+            <CardTitle className="text-xl tracking-tight">
+              Inventory Scanner
             </CardTitle>
             <CardDescription className="mt-1">
               Sign in to manage your inventory
