@@ -119,7 +119,10 @@ export default function AccountPage() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <form
+            className="space-y-2"
+            onSubmit={(e) => { e.preventDefault(); handleSaveName(); }}
+          >
             <Label htmlFor="name">Display name</Label>
             <div className="flex gap-2">
               <Input
@@ -129,7 +132,7 @@ export default function AccountPage() {
                 placeholder="Your name"
               />
               <Button
-                onClick={handleSaveName}
+                type="submit"
                 disabled={savingName || name === (user.name || "")}
               >
                 <Save className="mr-1 h-4 w-4" />
@@ -142,7 +145,7 @@ export default function AccountPage() {
                 {nameMessage.text}
               </p>
             )}
-          </div>
+          </form>
         </CardContent>
       </Card>
 
@@ -154,59 +157,74 @@ export default function AccountPage() {
             Change password
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor="current-password">Current password</Label>
-            <Input
-              id="current-password"
-              type="password"
-              value={currentPassword}
-              onChange={e => setCurrentPassword(e.target.value)}
-              autoComplete="current-password"
+        <CardContent>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => { e.preventDefault(); handleChangePassword(); }}
+          >
+            {/* Hidden username helps password managers associate this form
+                with the correct account. */}
+            <input
+              type="text"
+              name="username"
+              value={user.email}
+              autoComplete="username"
+              readOnly
+              hidden
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="new-password">New password (min 8 characters)</Label>
-            <Input
-              id="new-password"
-              type="password"
-              value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="confirm-password">Confirm new password</Label>
-            <Input
-              id="confirm-password"
-              type="password"
-              value={confirmPassword}
-              onChange={e => setConfirmPassword(e.target.value)}
-              autoComplete="new-password"
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="current-password">Current password</Label>
+              <Input
+                id="current-password"
+                type="password"
+                value={currentPassword}
+                onChange={e => setCurrentPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-password">New password (min 8 characters)</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-password">Confirm new password</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </div>
 
-          <div className="flex items-center justify-between pt-1">
-            <Button
-              onClick={handleChangePassword}
-              disabled={
-                changingPw ||
-                !currentPassword ||
-                !newPassword ||
-                !confirmPassword ||
-                newPassword.length < 8
-              }
-            >
-              <KeyRound className="mr-1 h-4 w-4" />
-              {changingPw ? "Updating..." : "Update password"}
-            </Button>
-            {pwMessage && (
-              <p className={`text-xs ${pwMessage.type === "success" ? "text-emerald-600" : "text-destructive"}`}>
-                {pwMessage.type === "success" && <CheckCircle2 className="mr-1 inline h-3 w-3" />}
-                {pwMessage.text}
-              </p>
-            )}
-          </div>
+            <div className="flex items-center justify-between pt-1">
+              <Button
+                type="submit"
+                disabled={
+                  changingPw ||
+                  !currentPassword ||
+                  !newPassword ||
+                  !confirmPassword ||
+                  newPassword.length < 8
+                }
+              >
+                <KeyRound className="mr-1 h-4 w-4" />
+                {changingPw ? "Updating..." : "Update password"}
+              </Button>
+              {pwMessage && (
+                <p className={`text-xs ${pwMessage.type === "success" ? "text-emerald-600" : "text-destructive"}`}>
+                  {pwMessage.type === "success" && <CheckCircle2 className="mr-1 inline h-3 w-3" />}
+                  {pwMessage.text}
+                </p>
+              )}
+            </div>
+          </form>
         </CardContent>
       </Card>
     </div>
