@@ -453,12 +453,3 @@ When you wire actual Sage sync in `src/app/api/cycle-count/route.ts`:
 2. Tap the share/menu button → "Add to Home Screen".
 3. Launches in standalone mode (no browser chrome). Camera permission is requested on first scan.
 
----
-
-## Default Admin (from seed)
-
-- **Email:** `admin@inventory.local`
-- **Password:** `admin123`
-- **Role:** `ADMIN`
-
-⚠️ **Change this password immediately after first login.** The seed only runs on request (`npm run db:seed`), so this user exists only if you seed it.
