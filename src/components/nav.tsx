@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ScanBarcode, LayoutDashboard, Package, Tag, ClipboardCheck, ListTodo, Settings, LogOut, UserCircle, Building2 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
+import { SnaLogo, SnaMark } from "@/components/logo";
 
 const baseNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: false },
@@ -67,12 +68,7 @@ export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 z-50 hidden h-screen w-64 flex-col border-r border-border/40 bg-background/95 backdrop-blur-xl md:flex">
       <div className="flex h-16 items-center border-b border-border/40 px-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/sna-logo.svg"
-          alt="Safety NetAccess"
-          className="h-10 w-auto"
-        />
+        <SnaLogo className="h-10 w-auto" />
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-4">
@@ -127,12 +123,7 @@ export function TopBar({ title }: { title: string }) {
     <header className="sticky top-0 z-40 border-b border-border/40 bg-background/80 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/favicon.svg"
-            alt="Safety NetAccess"
-            className="h-6 w-6 md:hidden"
-          />
+          <SnaMark className="h-6 w-6 md:hidden" />
           <h1
             className="text-lg font-bold tracking-tight"
             style={{ fontFamily: "'JetBrains Mono', monospace" }}

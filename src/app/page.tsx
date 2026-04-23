@@ -4,6 +4,7 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { SnaLogo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,12 +44,7 @@ export default function LoginPage() {
       <Card className="relative w-full max-w-sm border-border/50 bg-card/50 backdrop-blur-sm">
         <CardHeader className="space-y-4 text-center">
           <div className="flex justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/sna-logo.svg"
-              alt="Safety NetAccess"
-              className="h-16 w-auto"
-            />
+            <SnaLogo className="h-16 w-auto" />
           </div>
           <div>
             <CardTitle className="text-xl tracking-tight">
