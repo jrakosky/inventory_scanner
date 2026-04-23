@@ -2,8 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
-// GET - List cycle counts or get a single one
+async function generateDocumentNumber(): Promise<string> {
+  const count = await prisma.cycleCount.count();
+  return `ICC-${String(count + 1).padStart(6, "0")}`;
+}
+
+function toDecimalString(v: unknown): string | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : parseFloat(String(v));
+  if (isNaN(n) || n < 0) return null;
+  return n.toFixed(2);
+}
+
+function variance(counted: Prisma.Decimal | null, onHand: Prisma.Decimal | null): number {
+  if (!counted || !onHand) return 0;
+  return counted.toNumber() - onHand.toNumber();
+}
+
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user)
@@ -11,12 +28,16 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
-  const status = searchParams.get("status");
+  const state = searchParams.get("state");
+  const warehouseId = searchParams.get("warehouseId");
 
   if (id) {
     const cycleCount = await prisma.cycleCount.findUnique({
       where: { id },
       include: {
+        warehouse: true,
+        assignedTo: { select: { id: true, name: true, email: true } },
+        createdBy: { select: { id: true, name: true, email: true } },
         entries: {
           include: {
             inventoryItem: true,
@@ -24,69 +45,73 @@ export async function GET(req: NextRequest) {
           },
           orderBy: { createdAt: "asc" },
         },
-        createdBy: { select: { name: true, email: true } },
-        _count: { select: { entries: true } },
       },
     });
     if (!cycleCount)
       return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // Calculate summary stats
-    const totalEntries = cycleCount.entries.length;
-    const countedEntries = cycleCount.entries.filter(e => e.status === "COUNTED").length;
-    const skippedEntries = cycleCount.entries.filter(e => e.status === "SKIPPED").length;
-    const pendingEntries = cycleCount.entries.filter(e => e.status === "PENDING").length;
-    const varianceEntries = cycleCount.entries.filter(e => e.status === "COUNTED" && e.variance !== 0);
-    const totalVariance = varianceEntries.reduce((sum, e) => sum + Math.abs(e.variance || 0), 0);
+    const lines = cycleCount.entries;
+    const linesInCount = lines.filter(l => l.lineCountStatus === "counted").length;
+    const linesSkipped = lines.filter(l => l.lineCountStatus === "skipped").length;
+    const linesPending = lines.filter(l => l.lineCountStatus === "notCounted" || l.lineCountStatus === "inProgress").length;
+    const linesWithVariance = lines.filter(l =>
+      l.lineCountStatus === "counted" && variance(l.counted, l.onHand) !== 0
+    ).length;
 
     return NextResponse.json({
       ...cycleCount,
-      summary: { totalEntries, countedEntries, skippedEntries, pendingEntries, varianceCount: varianceEntries.length, totalVariance },
+      summary: {
+        totalLines: lines.length,
+        linesInCount,
+        linesSkipped,
+        linesPending,
+        linesWithVariance,
+      },
     });
   }
 
-  // List all cycle counts
-  const where: any = {};
-  if (status) where.status = status;
+  const where: Prisma.CycleCountWhereInput = {};
+  if (state) where.state = state as Prisma.CycleCountWhereInput["state"];
+  if (warehouseId) where.warehouseId = warehouseId;
 
   const cycleCounts = await prisma.cycleCount.findMany({
     where,
     orderBy: { createdAt: "desc" },
     include: {
+      warehouse: { select: { id: true, name: true } },
+      assignedTo: { select: { id: true, name: true, email: true } },
       createdBy: { select: { name: true, email: true } },
-      _count: { select: { entries: true } },
-      entries: {
-        select: { status: true, variance: true },
-      },
+      entries: { select: { lineCountStatus: true, counted: true, onHand: true } },
     },
   });
 
   const formatted = cycleCounts.map(cc => {
-    const total = cc.entries.length;
-    const counted = cc.entries.filter(e => e.status === "COUNTED").length;
-    const withVariance = cc.entries.filter(e => e.status === "COUNTED" && e.variance !== 0).length;
+    const totalLines = cc.entries.length;
+    const linesInCount = cc.entries.filter(e => e.lineCountStatus === "counted").length;
+    const linesWithVariance = cc.entries.filter(e =>
+      e.lineCountStatus === "counted" && variance(e.counted, e.onHand) !== 0
+    ).length;
     return {
       id: cc.id,
-      name: cc.name,
-      status: cc.status,
-      filterType: cc.filterType,
-      filterValue: cc.filterValue,
-      notes: cc.notes,
+      documentNumber: cc.documentNumber,
+      description: cc.description,
+      state: cc.state,
+      warehouse: cc.warehouse,
+      assignedTo: cc.assignedTo,
       createdBy: cc.createdBy,
       createdAt: cc.createdAt,
-      startedAt: cc.startedAt,
-      completedAt: cc.completedAt,
-      totalEntries: total,
-      countedEntries: counted,
-      varianceCount: withVariance,
-      progress: total > 0 ? Math.round((counted / total) * 100) : 0,
+      startDate: cc.startDate,
+      endDate: cc.endDate,
+      totalLines,
+      linesInCount,
+      linesWithVariance,
+      progress: totalLines > 0 ? Math.round((linesInCount / totalLines) * 100) : 0,
     };
   });
 
   return NextResponse.json({ cycleCounts: formatted });
 }
 
-// POST - Create a new cycle count
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user)
@@ -94,51 +119,80 @@ export async function POST(req: NextRequest) {
 
   const userId = (session.user as any).id;
   const body = await req.json();
-  const { name, filterType, filterValue, notes } = body;
+  const {
+    description,
+    warehouseId,
+    assignedToId,
+    itemFilter,
+    itemIds,
+    excludedAllocatedQuantity,
+    showQuantityOnHand,
+  } = body;
 
-  if (!name?.trim())
-    return NextResponse.json({ error: "Name is required" }, { status: 400 });
+  if (!description?.trim())
+    return NextResponse.json({ error: "Description is required" }, { status: 400 });
+  if (!warehouseId)
+    return NextResponse.json({ error: "Warehouse is required" }, { status: 400 });
+  if (!assignedToId)
+    return NextResponse.json({ error: "Assignee is required" }, { status: 400 });
 
-  // Build filter for which items to include
-  const itemWhere: any = {};
-  if (filterType && filterValue) {
-    switch (filterType) {
-      case "zone": itemWhere.zone = filterValue; break;
-      case "aisle": itemWhere.aisle = filterValue; break;
-      case "row": itemWhere.row = filterValue; break;
-      case "bin": itemWhere.bin = filterValue; break;
-      case "category": itemWhere.category = filterValue; break;
-      case "all": break;
-      default: break;
+  const [warehouse, assignee] = await Promise.all([
+    prisma.warehouse.findUnique({ where: { id: warehouseId } }),
+    prisma.user.findUnique({ where: { id: assignedToId } }),
+  ]);
+  if (!warehouse)
+    return NextResponse.json({ error: "Warehouse not found" }, { status: 400 });
+  if (!assignee)
+    return NextResponse.json({ error: "Assignee not found" }, { status: 400 });
+
+  let items;
+  if (Array.isArray(itemIds) && itemIds.length > 0) {
+    items = await prisma.inventoryItem.findMany({ where: { id: { in: itemIds } } });
+  } else {
+    const itemWhere: Prisma.InventoryItemWhereInput = {};
+    if (itemFilter?.type && itemFilter.type !== "all" && itemFilter.value) {
+      if (itemFilter.type === "zone") itemWhere.zone = itemFilter.value;
+      else if (itemFilter.type === "aisle") itemWhere.aisle = itemFilter.value;
+      else if (itemFilter.type === "category") itemWhere.category = itemFilter.value;
     }
+    items = await prisma.inventoryItem.findMany({ where: itemWhere });
   }
-
-  const items = await prisma.inventoryItem.findMany({ where: itemWhere });
 
   if (items.length === 0)
     return NextResponse.json({ error: "No items match the selected filter" }, { status: 400 });
 
+  const documentNumber = await generateDocumentNumber();
+
   const cycleCount = await prisma.cycleCount.create({
     data: {
-      name,
-      filterType: filterType || "all",
-      filterValue: filterValue || null,
-      notes: notes || null,
+      documentNumber,
+      description: description.trim(),
+      warehouseId,
+      assignedToId,
       createdById: userId,
+      excludedAllocatedQuantity: !!excludedAllocatedQuantity,
+      showQuantityOnHand: !!showQuantityOnHand,
       entries: {
         create: items.map(item => ({
           inventoryItemId: item.id,
-          expectedQty: item.quantity,
+          bin: item.bin,
+          aisle: item.aisle,
+          zone: item.zone,
+          row: item.row,
+          unitCost: item.costPrice,
         })),
       },
     },
-    include: { _count: { select: { entries: true } } },
+    include: {
+      warehouse: true,
+      assignedTo: { select: { id: true, name: true, email: true } },
+      _count: { select: { entries: true } },
+    },
   });
 
   return NextResponse.json({ cycleCount });
 }
 
-// PUT - Update cycle count status or update an entry
 export async function PUT(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user)
@@ -147,106 +201,77 @@ export async function PUT(req: NextRequest) {
   const userId = (session.user as any).id;
   const body = await req.json();
 
-  // Update a cycle count entry (record a count)
   if (body.entryId) {
-    const { entryId, countedQty, adjustmentReason, skip } = body;
+    const { entryId, counted, damaged, adjustmentReason, skip } = body;
 
     const entry = await prisma.cycleCountEntry.findUnique({
       where: { id: entryId },
       include: { cycleCount: true },
     });
-
     if (!entry)
       return NextResponse.json({ error: "Entry not found" }, { status: 404 });
+    if (!["notStarted", "inProgress"].includes(entry.cycleCount.state))
+      return NextResponse.json({ error: "Cycle count is not active" }, { status: 400 });
 
     if (skip) {
       const updated = await prisma.cycleCountEntry.update({
         where: { id: entryId },
-        data: { status: "SKIPPED" },
+        data: { lineCountStatus: "skipped" },
       });
+      await autoStart(entry.cycleCountId, entry.cycleCount.state);
       return NextResponse.json({ entry: updated });
     }
 
-    const counted = parseInt(countedQty);
-    if (isNaN(counted) || counted < 0)
-      return NextResponse.json({ error: "Invalid count" }, { status: 400 });
+    const countedStr = toDecimalString(counted);
+    const damagedStr = toDecimalString(damaged);
 
-    const variance = counted - entry.expectedQty;
+    if (countedStr === null)
+      return NextResponse.json({ error: "Invalid counted quantity" }, { status: 400 });
 
     const updated = await prisma.cycleCountEntry.update({
       where: { id: entryId },
       data: {
-        countedQty: counted,
-        variance,
-        status: "COUNTED",
+        counted: countedStr,
+        damaged: damagedStr,
+        lineCountStatus: "counted",
         countedById: userId,
-        adjustmentReason: adjustmentReason || null,
+        adjustmentReason: adjustmentReason?.trim() || null,
         countedAt: new Date(),
       },
       include: { inventoryItem: true },
     });
 
-    // Auto-update cycle count status to IN_PROGRESS if it was NOT_STARTED
-    if (entry.cycleCount.status === "NOT_STARTED") {
-      await prisma.cycleCount.update({
-        where: { id: entry.cycleCountId },
-        data: { status: "IN_PROGRESS", startedAt: new Date() },
-      });
-    }
+    await autoStart(entry.cycleCountId, entry.cycleCount.state);
 
     return NextResponse.json({ entry: updated });
   }
 
-  // Update cycle count status (complete, reconcile, void)
-  if (body.cycleCountId && body.status) {
-    const { cycleCountId, status } = body;
+  if (body.cycleCountId && body.state) {
+    const { cycleCountId, state } = body;
 
     const validTransitions: Record<string, string[]> = {
-      NOT_STARTED: ["IN_PROGRESS", "VOIDED"],
-      IN_PROGRESS: ["COUNTED", "VOIDED"],
-      COUNTED: ["RECONCILED", "VOIDED"],
-      RECONCILED: [],
-      VOIDED: [],
+      notStarted: ["inProgress", "voided"],
+      inProgress: ["counted", "voided"],
+      counted: [],
+      voided: [],
     };
 
     const current = await prisma.cycleCount.findUnique({ where: { id: cycleCountId } });
     if (!current)
       return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!validTransitions[current.state]?.includes(state))
+      return NextResponse.json({ error: `Cannot transition from ${current.state} to ${state}` }, { status: 400 });
 
-    if (!validTransitions[current.status]?.includes(status))
-      return NextResponse.json({ error: `Cannot transition from ${current.status} to ${status}` }, { status: 400 });
+    const updateData: Prisma.CycleCountUpdateInput = { state };
+    const now = new Date();
 
-    const updateData: any = { status };
-    if (status === "COUNTED" || status === "RECONCILED") {
-      updateData.completedAt = new Date();
+    if (state === "inProgress") {
+      updateData.startDate = now;
+      await snapshotOnHand(cycleCountId);
     }
-
-    // If reconciling, apply the counted quantities to inventory
-    if (status === "RECONCILED") {
-      const entries = await prisma.cycleCountEntry.findMany({
-        where: { cycleCountId, status: "COUNTED", variance: { not: 0 } },
-        include: { inventoryItem: true },
-      });
-
-      for (const entry of entries) {
-        if (entry.countedQty !== null) {
-          await prisma.inventoryItem.update({
-            where: { id: entry.inventoryItemId },
-            data: { quantity: entry.countedQty },
-          });
-
-          await prisma.scanLog.create({
-            data: {
-              barcode: entry.inventoryItem.barcode,
-              action: "AUDITED",
-              quantityChange: entry.variance || 0,
-              notes: `Cycle count reconciliation: ${current.name}. Expected: ${entry.expectedQty}, Counted: ${entry.countedQty}. ${entry.adjustmentReason || ""}`,
-              scannedById: userId,
-              inventoryItemId: entry.inventoryItemId,
-            },
-          });
-        }
-      }
+    if (state === "counted") {
+      updateData.endDate = now;
+      await snapshotOnHandAtEnd(cycleCountId);
     }
 
     const updated = await prisma.cycleCount.update({
@@ -260,14 +285,47 @@ export async function PUT(req: NextRequest) {
   return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 }
 
-// DELETE - Delete a cycle count (only if NOT_STARTED or VOIDED)
+async function autoStart(cycleCountId: string, currentState: string) {
+  if (currentState !== "notStarted") return;
+  await prisma.cycleCount.update({
+    where: { id: cycleCountId },
+    data: { state: "inProgress", startDate: new Date() },
+  });
+  await snapshotOnHand(cycleCountId);
+}
+
+async function snapshotOnHand(cycleCountId: string) {
+  const entries = await prisma.cycleCountEntry.findMany({
+    where: { cycleCountId, onHand: null },
+    include: { inventoryItem: { select: { quantity: true } } },
+  });
+  for (const e of entries) {
+    await prisma.cycleCountEntry.update({
+      where: { id: e.id },
+      data: { onHand: e.inventoryItem.quantity.toFixed(2) },
+    });
+  }
+}
+
+async function snapshotOnHandAtEnd(cycleCountId: string) {
+  const entries = await prisma.cycleCountEntry.findMany({
+    where: { cycleCountId },
+    include: { inventoryItem: { select: { quantity: true } } },
+  });
+  for (const e of entries) {
+    await prisma.cycleCountEntry.update({
+      where: { id: e.id },
+      data: { onHandAtEnd: e.inventoryItem.quantity.toFixed(2) },
+    });
+  }
+}
+
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
+  const id = new URL(req.url).searchParams.get("id");
   if (!id)
     return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
@@ -275,7 +333,7 @@ export async function DELETE(req: NextRequest) {
   if (!cc)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (!["NOT_STARTED", "VOIDED"].includes(cc.status))
+  if (!["notStarted", "voided"].includes(cc.state))
     return NextResponse.json({ error: "Can only delete counts that are Not Started or Voided" }, { status: 400 });
 
   await prisma.cycleCount.delete({ where: { id } });

@@ -6,20 +6,19 @@ import {
   ClipboardCheck,
   Plus,
   Play,
-  CheckCircle2,
   XCircle,
   Download,
   Trash2,
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  Building2,
+  User as UserIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -29,34 +28,36 @@ import {
 
 interface CycleCountSummary {
   id: string;
-  name: string;
-  status: string;
-  filterType: string | null;
-  filterValue: string | null;
+  documentNumber: string;
+  description: string;
+  state: "notStarted" | "inProgress" | "counted" | "voided";
+  warehouse: { id: string; name: string } | null;
+  assignedTo: { id: string; name: string | null; email: string } | null;
   createdBy: { name: string | null; email: string };
   createdAt: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  totalEntries: number;
-  countedEntries: number;
-  varianceCount: number;
+  startDate: string | null;
+  endDate: string | null;
+  totalLines: number;
+  linesInCount: number;
+  linesWithVariance: number;
   progress: number;
 }
 
-const statusColors: Record<string, string> = {
-  NOT_STARTED: "bg-gray-100 text-gray-700",
-  IN_PROGRESS: "bg-amber-100 text-amber-700",
-  COUNTED: "bg-blue-100 text-blue-700",
-  RECONCILED: "bg-emerald-100 text-emerald-700",
-  VOIDED: "bg-red-100 text-red-700",
+interface Warehouse { id: string; name: string; active: boolean; }
+interface UserRef { id: string; name: string | null; email: string; role: string; }
+
+const stateColors: Record<string, string> = {
+  notStarted: "bg-gray-100 text-gray-700",
+  inProgress: "bg-amber-100 text-amber-700",
+  counted: "bg-blue-100 text-blue-700",
+  voided: "bg-red-100 text-red-700",
 };
 
-const statusLabels: Record<string, string> = {
-  NOT_STARTED: "Not Started",
-  IN_PROGRESS: "In Progress",
-  COUNTED: "Counted",
-  RECONCILED: "Reconciled",
-  VOIDED: "Voided",
+const stateLabels: Record<string, string> = {
+  notStarted: "Not started",
+  inProgress: "In progress",
+  counted: "Counted — awaiting Sage reconcile",
+  voided: "Voided",
 };
 
 export default function CycleCountPage() {
@@ -65,14 +66,19 @@ export default function CycleCountPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
 
-  // Create form
-  const [newName, setNewName] = useState("");
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [users, setUsers] = useState<UserRef[]>([]);
+
+  const [newDescription, setNewDescription] = useState("");
+  const [newWarehouseId, setNewWarehouseId] = useState("");
+  const [newAssignedToId, setNewAssignedToId] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterValue, setFilterValue] = useState("");
-  const [newNotes, setNewNotes] = useState("");
+  const [excludedAllocated, setExcludedAllocated] = useState(true);
+  const [showQtyOnHand, setShowQtyOnHand] = useState(false);
 
-  // Available filter values from inventory
   const [zones, setZones] = useState<string[]>([]);
   const [aisles, setAisles] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -87,45 +93,70 @@ export default function CycleCountPage() {
     setLoading(false);
   }, []);
 
-  const fetchFilterOptions = useCallback(async () => {
+  const fetchMeta = useCallback(async () => {
     try {
-      const res = await fetch("/api/inventory");
-      const data = await res.json();
-      const items = data.items || [];
+      const [whRes, usersRes, invRes] = await Promise.all([
+        fetch("/api/warehouses"),
+        fetch("/api/users"),
+        fetch("/api/inventory"),
+      ]);
+      const whData = await whRes.json();
+      const usersData = await usersRes.json();
+      const invData = await invRes.json();
+      const activeWarehouses: Warehouse[] = (whData.warehouses || []).filter((w: Warehouse) => w.active);
+      setWarehouses(activeWarehouses);
+      setUsers(usersData.users || []);
+      const items = invData.items || [];
       setZones(Array.from(new Set(items.map((i: any) => i.zone).filter(Boolean))) as string[]);
       setAisles(Array.from(new Set(items.map((i: any) => i.aisle).filter(Boolean))) as string[]);
-      setCategories(data.categories || []);
+      setCategories(invData.categories || []);
     } catch {}
   }, []);
 
-  useEffect(() => { fetchCounts(); fetchFilterOptions(); }, [fetchCounts, fetchFilterOptions]);
+  useEffect(() => { fetchCounts(); fetchMeta(); }, [fetchCounts, fetchMeta]);
+
+  const resetCreateForm = () => {
+    setNewDescription("");
+    setNewWarehouseId("");
+    setNewAssignedToId("");
+    setFilterType("all");
+    setFilterValue("");
+    setExcludedAllocated(true);
+    setShowQtyOnHand(false);
+    setCreateError("");
+  };
 
   const handleCreate = async () => {
-    if (!newName.trim()) return;
+    setCreateError("");
+    if (!newDescription.trim() || !newWarehouseId || !newAssignedToId) {
+      setCreateError("Description, warehouse, and assignee are all required");
+      return;
+    }
     setCreating(true);
     try {
       const res = await fetch("/api/cycle-count", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: newName,
-          filterType,
-          filterValue: filterType === "all" ? null : filterValue,
-          notes: newNotes,
+          description: newDescription,
+          warehouseId: newWarehouseId,
+          assignedToId: newAssignedToId,
+          itemFilter: { type: filterType, value: filterType === "all" ? undefined : filterValue },
+          excludedAllocatedQuantity: excludedAllocated,
+          showQuantityOnHand: showQtyOnHand,
         }),
       });
       if (res.ok) {
         setShowCreate(false);
-        setNewName("");
-        setFilterType("all");
-        setFilterValue("");
-        setNewNotes("");
+        resetCreateForm();
         fetchCounts();
       } else {
         const err = await res.json();
-        alert(err.error || "Failed to create");
+        setCreateError(err.error || "Failed to create");
       }
-    } catch {}
+    } catch {
+      setCreateError("Network error");
+    }
     setCreating(false);
   };
 
@@ -140,31 +171,52 @@ export default function CycleCountPage() {
     await fetch("/api/cycle-count", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cycleCountId: id, status: "VOIDED" }),
+      body: JSON.stringify({ cycleCountId: id, state: "voided" }),
     });
     fetchCounts();
   };
 
   const handleExport = (id: string) => {
-    window.open(`/api/cycle-count/export?id=${id}`, "_blank");
+    window.open(`/api/cycle-count/export-xlsx?id=${id}`, "_blank");
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">Cycle Counts</h2>
+          <h2 className="text-xl font-bold tracking-tight">Cycle counts</h2>
           <p className="text-sm text-muted-foreground">
-            Count portions of inventory on a rotating schedule
+            Count portions of inventory on a rotating schedule. Final reconciliation happens in Sage.
           </p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
+        <Button
+          onClick={() => {
+            resetCreateForm();
+            if (warehouses[0]) setNewWarehouseId(warehouses[0].id);
+            setShowCreate(true);
+          }}
+          disabled={warehouses.length === 0 || users.length === 0}
+        >
           <Plus className="mr-2 h-4 w-4" />
-          New Count
+          New count
         </Button>
       </div>
 
-      {/* Active Counts */}
+      {warehouses.length === 0 && !loading && (
+        <Card>
+          <CardContent className="flex items-center gap-3 py-4">
+            <Building2 className="h-5 w-5 text-muted-foreground" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">No warehouses configured</p>
+              <p className="text-xs text-muted-foreground">Add a warehouse in Settings before creating a count.</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => router.push("/settings")}>
+              Go to Settings
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {loading ? (
         <div className="space-y-3">
           {[1, 2].map(i => (
@@ -189,28 +241,37 @@ export default function CycleCountPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="font-semibold truncate">{cc.name}</h3>
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[cc.status]}`}>
-                        {statusLabels[cc.status]}
+                      <h3 className="font-semibold truncate">{cc.description}</h3>
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${stateColors[cc.state]}`}>
+                        {stateLabels[cc.state]}
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                      <span>{cc.totalEntries} items</span>
-                      {cc.filterType && cc.filterType !== "all" && (
-                        <span>Filter: {cc.filterType} = {cc.filterValue}</span>
+                      <span className="font-mono">{cc.documentNumber}</span>
+                      {cc.warehouse && (
+                        <span className="inline-flex items-center gap-1">
+                          <Building2 className="h-3 w-3" />
+                          {cc.warehouse.name}
+                        </span>
                       )}
+                      {cc.assignedTo && (
+                        <span className="inline-flex items-center gap-1">
+                          <UserIcon className="h-3 w-3" />
+                          {cc.assignedTo.name || cc.assignedTo.email}
+                        </span>
+                      )}
+                      <span>{cc.totalLines} items</span>
                       <span>{new Date(cc.createdAt).toLocaleDateString()}</span>
                     </div>
 
-                    {/* Progress bar */}
-                    {cc.status !== "NOT_STARTED" && cc.status !== "VOIDED" && (
+                    {cc.state !== "notStarted" && cc.state !== "voided" && (
                       <div className="mt-2">
                         <div className="flex items-center justify-between text-xs mb-1">
-                          <span>{cc.countedEntries}/{cc.totalEntries} counted</span>
-                          {cc.varianceCount > 0 && (
+                          <span>{cc.linesInCount}/{cc.totalLines} counted</span>
+                          {cc.linesWithVariance > 0 && (
                             <span className="flex items-center text-amber-600">
                               <AlertTriangle className="mr-1 h-3 w-3" />
-                              {cc.varianceCount} variances
+                              {cc.linesWithVariance} variances
                             </span>
                           )}
                         </div>
@@ -225,44 +286,34 @@ export default function CycleCountPage() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    {(cc.status === "NOT_STARTED" || cc.status === "IN_PROGRESS") && (
-                      <Button
-                        size="sm"
-                        onClick={() => router.push(`/cycle-count/${cc.id}`)}
-                      >
-                        {cc.status === "NOT_STARTED" ? (
+                    {(cc.state === "notStarted" || cc.state === "inProgress") && (
+                      <Button size="sm" onClick={() => router.push(`/cycle-count/${cc.id}`)}>
+                        {cc.state === "notStarted" ? (
                           <><Play className="mr-1 h-3 w-3" /> Start</>
                         ) : (
                           <><ArrowRight className="mr-1 h-3 w-3" /> Continue</>
                         )}
                       </Button>
                     )}
-                    {cc.status === "COUNTED" && (
-                      <Button
-                        size="sm"
-                        onClick={() => router.push(`/cycle-count/${cc.id}`)}
-                      >
+                    {cc.state === "counted" && (
+                      <Button size="sm" onClick={() => router.push(`/cycle-count/${cc.id}`)}>
                         <BarChart3 className="mr-1 h-3 w-3" /> Review
                       </Button>
                     )}
-                    {cc.status === "RECONCILED" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => router.push(`/cycle-count/${cc.id}`)}
-                      >
+                    {cc.state === "voided" && (
+                      <Button size="sm" variant="outline" onClick={() => router.push(`/cycle-count/${cc.id}`)}>
                         View
                       </Button>
                     )}
                     <Button size="sm" variant="outline" onClick={() => handleExport(cc.id)}>
                       <Download className="h-3 w-3" />
                     </Button>
-                    {(cc.status === "NOT_STARTED" || cc.status === "IN_PROGRESS") && (
+                    {(cc.state === "notStarted" || cc.state === "inProgress") && (
                       <Button size="sm" variant="outline" onClick={() => handleVoid(cc.id)}>
                         <XCircle className="h-3 w-3" />
                       </Button>
                     )}
-                    {(cc.status === "NOT_STARTED" || cc.status === "VOIDED") && (
+                    {(cc.state === "notStarted" || cc.state === "voided") && (
                       <Button size="sm" variant="outline" onClick={() => handleDelete(cc.id)}>
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -275,35 +326,60 @@ export default function CycleCountPage() {
         </div>
       )}
 
-      {/* Create Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>New Cycle Count</DialogTitle>
+            <DialogTitle>New cycle count</DialogTitle>
             <DialogDescription>
-              Select which inventory items to include in this count.
+              Create a count scoped to a warehouse and assigned to an employee.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Count Name *</Label>
+              <Label>Description *</Label>
               <Input
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
-                placeholder="e.g. Zone A - February 2026"
+                value={newDescription}
+                onChange={e => setNewDescription(e.target.value)}
+                placeholder="e.g. Zone A damaged laptops"
                 autoFocus
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Filter Items By</Label>
+              <Label>Warehouse *</Label>
+              <Select value={newWarehouseId} onValueChange={setNewWarehouseId}>
+                <SelectTrigger><SelectValue placeholder="Select warehouse" /></SelectTrigger>
+                <SelectContent>
+                  {warehouses.map(w => (
+                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Assigned to *</Label>
+              <Select value={newAssignedToId} onValueChange={setNewAssignedToId}>
+                <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+                <SelectContent>
+                  {users.map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name || u.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Filter items by</Label>
               <Select value={filterType} onValueChange={v => { setFilterType(v); setFilterValue(""); }}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Items</SelectItem>
+                  <SelectItem value="all">All items</SelectItem>
                   <SelectItem value="zone">Zone</SelectItem>
                   <SelectItem value="aisle">Aisle</SelectItem>
                   <SelectItem value="category">Category</SelectItem>
@@ -345,21 +421,37 @@ export default function CycleCountPage() {
               </div>
             )}
 
-            <div className="space-y-2">
-              <Label>Notes (optional)</Label>
-              <Textarea
-                value={newNotes}
-                onChange={e => setNewNotes(e.target.value)}
-                placeholder="Any notes about this count..."
-                rows={2}
-              />
+            <div className="space-y-2 rounded-md border p-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={excludedAllocated}
+                  onChange={e => setExcludedAllocated(e.target.checked)}
+                />
+                Exclude allocated quantity
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={showQtyOnHand}
+                  onChange={e => setShowQtyOnHand(e.target.checked)}
+                />
+                Show quantity on hand during count
+              </label>
             </div>
+
+            {createError && (
+              <p className="text-sm text-destructive">{createError}</p>
+            )}
           </div>
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={creating || !newName.trim()}>
-              {creating ? "Creating..." : "Create Count"}
+            <Button
+              onClick={handleCreate}
+              disabled={creating || !newDescription.trim() || !newWarehouseId || !newAssignedToId}
+            >
+              {creating ? "Creating..." : "Create count"}
             </Button>
           </DialogFooter>
         </DialogContent>

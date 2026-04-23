@@ -13,8 +13,14 @@ import {
   History,
   Link as LinkIcon,
   Unlink,
+  Building2,
+  Plus,
+  Trash2,
+  Power,
+  PowerOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -27,6 +33,13 @@ interface IntacctStatus {
   cycleCountCount?: number;
 }
 
+interface Warehouse {
+  id: string;
+  name: string;
+  active: boolean;
+  intacctKey: string | null;
+}
+
 export default function SettingsPage() {
   const { data: session } = useSession();
   const searchParams = useSearchParams();
@@ -36,6 +49,10 @@ export default function SettingsPage() {
   const [sageMessage, setSageMessage] = useState("");
   const [intacct, setIntacct] = useState<IntacctStatus | null>(null);
   const [intacctLoading, setIntacctLoading] = useState(true);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [newWarehouseName, setNewWarehouseName] = useState("");
+  const [warehouseError, setWarehouseError] = useState("");
+  const [warehousesLoading, setWarehousesLoading] = useState(true);
   const isAdmin = (session?.user as any)?.role === "ADMIN";
 
   const testSageConnection = async () => {
@@ -67,12 +84,60 @@ export default function SettingsPage() {
     setIntacctLoading(false);
   }, []);
 
+  const fetchWarehouses = useCallback(async () => {
+    setWarehousesLoading(true);
+    try {
+      const res = await fetch("/api/warehouses");
+      const data = await res.json();
+      setWarehouses(data.warehouses || []);
+    } catch {}
+    setWarehousesLoading(false);
+  }, []);
+
   useEffect(() => {
     fetchIntacctStatus();
-  }, [fetchIntacctStatus]);
+    fetchWarehouses();
+  }, [fetchIntacctStatus, fetchWarehouses]);
 
   const intacctCallbackStatus = searchParams.get("intacct");
   const intacctCallbackMessage = searchParams.get("message");
+
+  const handleCreateWarehouse = async () => {
+    setWarehouseError("");
+    if (!newWarehouseName.trim()) return;
+    const res = await fetch("/api/warehouses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newWarehouseName }),
+    });
+    if (res.ok) {
+      setNewWarehouseName("");
+      fetchWarehouses();
+    } else {
+      const err = await res.json();
+      setWarehouseError(err.error || "Failed to add warehouse");
+    }
+  };
+
+  const handleToggleWarehouse = async (w: Warehouse) => {
+    await fetch("/api/warehouses", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: w.id, active: !w.active }),
+    });
+    fetchWarehouses();
+  };
+
+  const handleDeleteWarehouse = async (w: Warehouse) => {
+    if (!confirm(`Delete warehouse "${w.name}"?`)) return;
+    const res = await fetch(`/api/warehouses?id=${w.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error || "Could not delete");
+      return;
+    }
+    fetchWarehouses();
+  };
 
   const handleDisconnect = async () => {
     if (!confirm("Disconnect from Sage Intacct? You'll need to re-authorize.")) return;
@@ -259,6 +324,90 @@ export default function SettingsPage() {
 
           {sageMessage && (
             <p className="text-xs text-muted-foreground">{sageMessage}</p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Warehouses */}
+      <Card className="border-border/50">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Building2 className="h-4 w-4 text-primary" />
+            Warehouses
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Warehouses are required for cycle counts. They'll sync from Sage once connected — for now, add names that match what's in Sage.
+          </p>
+
+          {warehousesLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading...
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {warehouses.map(w => (
+                <div key={w.id} className="flex items-center justify-between rounded-md border px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm font-medium ${!w.active ? "text-muted-foreground line-through" : ""}`}>
+                      {w.name}
+                    </p>
+                    {w.intacctKey && (
+                      <p className="text-xs text-muted-foreground">Intacct: {w.intacctKey}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {!w.active && <Badge variant="outline" className="mr-2">Inactive</Badge>}
+                    {isAdmin && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleToggleWarehouse(w)}
+                          title={w.active ? "Deactivate" : "Activate"}
+                        >
+                          {w.active ? <PowerOff className="h-3.5 w-3.5" /> : <Power className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteWarehouse(w)}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {warehouses.length === 0 && (
+                <p className="text-sm text-muted-foreground">No warehouses yet.</p>
+              )}
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <Input
+                  value={newWarehouseName}
+                  onChange={e => setNewWarehouseName(e.target.value)}
+                  placeholder="New warehouse name"
+                  onKeyDown={e => {
+                    if (e.key === "Enter") { e.preventDefault(); handleCreateWarehouse(); }
+                  }}
+                />
+                <Button onClick={handleCreateWarehouse} disabled={!newWarehouseName.trim()}>
+                  <Plus className="mr-1 h-4 w-4" /> Add
+                </Button>
+              </div>
+              {warehouseError && (
+                <p className="text-xs text-destructive">{warehouseError}</p>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>

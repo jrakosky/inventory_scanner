@@ -15,6 +15,7 @@ export async function GET(req: NextRequest) {
   const cycleCount = await prisma.cycleCount.findUnique({
     where: { id },
     include: {
+      warehouse: true,
       entries: {
         include: {
           inventoryItem: true,
@@ -27,31 +28,45 @@ export async function GET(req: NextRequest) {
   if (!cycleCount)
     return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const headers = ["Item ID", "Item Name", "Zone", "Aisle", "Row", "Bin", "Unit", "Expected Qty", "Counted Qty", "Variance", "Status", "Counted By", "Adjustment Reason", "Counted At"];
+  const headers = [
+    "Item ID", "Item Name",
+    "Zone", "Aisle", "Row", "Bin", "Serial", "Lot",
+    "Unit", "On Hand", "Counted", "Damaged", "Variance",
+    "Status", "Counted By", "Adjustment Reason", "Counted At",
+  ];
 
-  const rows = cycleCount.entries.map(e => [
-    e.inventoryItem.barcode,
-    escapeCsv(e.inventoryItem.name),
-    escapeCsv(e.inventoryItem.zone || ""),
-    escapeCsv(e.inventoryItem.aisle || ""),
-    escapeCsv(e.inventoryItem.row || ""),
-    escapeCsv(e.inventoryItem.bin || ""),
-    escapeCsv(e.inventoryItem.unit || ""),
-    e.expectedQty.toString(),
-    e.countedQty?.toString() || "",
-    e.variance?.toString() || "",
-    e.status,
-    e.countedBy?.name || e.countedBy?.email || "",
-    escapeCsv(e.adjustmentReason || ""),
-    e.countedAt?.toISOString() || "",
-  ]);
+  const rows = cycleCount.entries.map(e => {
+    const onHand = e.onHand?.toNumber() ?? 0;
+    const counted = e.counted?.toNumber() ?? null;
+    const variance = counted !== null ? (counted - onHand).toFixed(2) : "";
+    return [
+      e.inventoryItem.barcode,
+      escapeCsv(e.inventoryItem.name),
+      escapeCsv(e.zone || ""),
+      escapeCsv(e.aisle || ""),
+      escapeCsv(e.row || ""),
+      escapeCsv(e.bin || ""),
+      escapeCsv(e.serialNumber || ""),
+      escapeCsv(e.lotNumber || ""),
+      escapeCsv(e.inventoryItem.unit || ""),
+      e.onHand?.toString() ?? "",
+      e.counted?.toString() ?? "",
+      e.damaged?.toString() ?? "",
+      variance,
+      e.lineCountStatus,
+      e.countedBy?.name || e.countedBy?.email || "",
+      escapeCsv(e.adjustmentReason || ""),
+      e.countedAt?.toISOString() || "",
+    ];
+  });
 
   const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+  const filenameSlug = cycleCount.documentNumber.replace(/[^A-Za-z0-9_-]+/g, "-");
 
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="cycle-count-${cycleCount.name.replace(/\s+/g, "-")}-${new Date().toISOString().split("T")[0]}.csv"`,
+      "Content-Disposition": `attachment; filename="${filenameSlug}-${new Date().toISOString().split("T")[0]}.csv"`,
     },
   });
 }

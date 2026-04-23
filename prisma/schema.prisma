@@ -15,12 +15,13 @@ model User {
   role           Role            @default(USER)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-  scanLogs           ScanLog[]
-  inventoryItems     InventoryItem[]
-  cycleCountsCreated CycleCount[]
-  cycleCountEntries  CycleCountEntry[] @relation("CountedByUser")
-  todos              Todo[]
-  intacctTokens      IntacctToken[]
+  scanLogs             ScanLog[]
+  inventoryItems       InventoryItem[]
+  cycleCountsCreated   CycleCount[]      @relation("CycleCountCreatedBy")
+  cycleCountsAssigned  CycleCount[]      @relation("CycleCountAssignedTo")
+  cycleCountEntries    CycleCountEntry[] @relation("CountedByUser")
+  todos                Todo[]
+  intacctTokens        IntacctToken[]
 }
 
 model InventoryItem {
@@ -91,58 +92,104 @@ enum ScanAction {
   AUDITED
 }
 
-model CycleCount {
-  id            String             @id @default(cuid())
-  name          String
-  status        CycleCountStatus   @default(NOT_STARTED)
-  filterType    String?
-  filterValue   String?
-  notes         String?            @db.Text
-  startedAt     DateTime?
-  completedAt   DateTime?
-  createdBy     User               @relation(fields: [createdById], references: [id])
-  createdById   String
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  entries       CycleCountEntry[]
+/// Warehouse — maps to Intacct's inventory-control/warehouse.
+/// Cycle counts (and later, inventory transfers for the staging feature)
+/// are scoped to a warehouse. `intacctKey` / `intacctId` are populated
+/// once the warehouse is synced from Sage; for local-only dev, seed names.
+model Warehouse {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  intacctKey  String?      @unique
+  intacctId   String?      @unique
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  cycleCounts CycleCount[]
+}
 
-  @@index([status])
+/// CycleCount — mirrors Intacct's inventory-control/cycle-count shape.
+/// The app handles states up to `counted`; `reconciled` and
+/// `adjustmentDate` / `adjustmentPostDate` are populated by Sage after
+/// reconciliation in the Sage UI.
+model CycleCount {
+  id                        String              @id @default(cuid())
+  documentNumber            String              @unique
+  description               String
+  warehouse                 Warehouse           @relation(fields: [warehouseId], references: [id])
+  warehouseId               String
+  assignedTo                User                @relation("CycleCountAssignedTo", fields: [assignedToId], references: [id])
+  assignedToId              String
+  createdBy                 User                @relation("CycleCountCreatedBy", fields: [createdById], references: [id])
+  createdById               String
+  state                     CycleCountState     @default(notStarted)
+  excludedAllocatedQuantity Boolean             @default(false)
+  showQuantityOnHand        Boolean             @default(false)
+  startDate                 DateTime?
+  endDate                   DateTime?
+  adjustmentDate            DateTime?
+  adjustmentPostDate        DateTime?
+  intacctKey                String?             @unique
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  entries                   CycleCountEntry[]
+
+  @@index([state])
+  @@index([warehouseId])
   @@index([createdAt])
 }
 
+/// CycleCountEntry — mirrors Intacct's cycle-count-line. Quantity fields
+/// use Decimal(10,2) to match Intacct's string-decimal format.
+/// Tracking fields (bin/aisle/zone/row/serial/lot) are snapshot at
+/// create time — the physical location at the moment the count was set up.
 model CycleCountEntry {
-  id               String        @id @default(cuid())
-  cycleCount       CycleCount    @relation(fields: [cycleCountId], references: [id], onDelete: Cascade)
+  id               String           @id @default(cuid())
+  cycleCount       CycleCount       @relation(fields: [cycleCountId], references: [id], onDelete: Cascade)
   cycleCountId     String
-  inventoryItem    InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  inventoryItem    InventoryItem    @relation(fields: [inventoryItemId], references: [id])
   inventoryItemId  String
-  expectedQty      Int
-  countedQty       Int?
-  variance         Int?
-  status           EntryStatus   @default(PENDING)
-  countedBy        User?         @relation("CountedByUser", fields: [countedById], references: [id])
-  countedById      String?
+
+  // Quantity fields (Intacct: quantity.*)
+  onHand           Decimal?         @db.Decimal(10, 2)
+  counted          Decimal?         @db.Decimal(10, 2)
+  damaged          Decimal?         @db.Decimal(10, 2)
+  onHandAtEnd      Decimal?         @db.Decimal(10, 2)
+  unitCost         Decimal?         @db.Decimal(10, 2)
+
+  // Tracking snapshot (Intacct: tracking.*)
+  bin              String?
+  aisle            String?
+  zone             String?
+  row              String?
+  serialNumber     String?
+  lotNumber        String?
+  expirationDate   DateTime?
+
   adjustmentReason String?
+  lineCountStatus  LineCountStatus  @default(notCounted)
+  countedBy        User?            @relation("CountedByUser", fields: [countedById], references: [id])
+  countedById      String?
   countedAt        DateTime?
-  createdAt        DateTime      @default(now())
+  intacctLineKey   String?          @unique
+  createdAt        DateTime         @default(now())
 
   @@index([cycleCountId])
   @@index([inventoryItemId])
-  @@index([status])
+  @@index([lineCountStatus])
 }
 
-enum CycleCountStatus {
-  NOT_STARTED
-  IN_PROGRESS
-  COUNTED
-  RECONCILED
-  VOIDED
+enum CycleCountState {
+  notStarted
+  inProgress
+  counted
+  voided
 }
 
-enum EntryStatus {
-  PENDING
-  COUNTED
-  SKIPPED
+enum LineCountStatus {
+  notCounted
+  inProgress
+  skipped
+  counted
 }
 
 model Todo {

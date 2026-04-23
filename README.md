@@ -4,25 +4,48 @@ A self-hosted, mobile-first inventory management app. Scan UPC/EAN barcodes with
 
 ---
 
-## Project Status
+## Project Phases
+
+### Phase 1 — Cycle counts with Sage Intacct sync (current)
 
 **Working today:**
 - Barcode scanning + manual entry
-- Inventory CRUD (including spreadsheet-style inline editing)
-- Cycle counting workflow (create → count → reconcile → adjustments) — local-only
+- Inventory CRUD with spreadsheet-style inline editing
+- **Cycle counting — refactored 2026-04-23 to match Intacct REST 1:1.** Warehouse + assignee required per count, separate `counted` / `damaged` quantities, `onHand` snapshots at start and end, Intacct-compatible state machine (`notStarted` → `inProgress` → `counted`). The app handles up to `counted`; **reconciliation (accepting adjustments, posting to GL) happens only in the Sage Intacct UI** — the app shows a "Reconcile in Sage" banner on completed counts.
+- Cycle count exports in both Excel (.xlsx) and CSV
+- Warehouse management in Settings
 - Task/feature-request list
-- CSV import + export
+- CSV import + export for inventory
 - Barcode label generation and printing
 - Scan audit log
-- Sage Intacct XML Gateway connection test (partial — see below)
+- Sage Intacct OAuth 2.0 scaffold (awaiting credentials — see below)
+- Sage Intacct XML Gateway connection test (legacy fallback)
 
-**In progress (scaffolded, awaiting credentials):**
-- **Sage Intacct REST/OAuth 2.0 integration** — the full OAuth flow, token storage, and typed REST client are built but not yet connected. Waiting on a `client_id` / `client_secret` from Sage and a registered redirect URI. See [Sage Intacct Integration](#sage-intacct-integration) for exactly where to pick up.
+**In progress — awaiting Sage OAuth credentials:**
+- **Wire cycle counts through the Intacct REST client.** The client and typed endpoints are built ([src/lib/intacct/cycle-count.ts](src/lib/intacct/cycle-count.ts)); right now `listCycleCounts` runs as a health probe on the status endpoint. Once OAuth creds arrive, flip the cycle-count create/update calls to go through Intacct first and mirror locally.
+- See [Sage Intacct Integration](#sage-intacct-integration) for the exact pickup checklist.
 
-**Planned:**
-- Wire cycle-count CRUD through the REST client (typed functions already exist in [src/lib/intacct/cycle-count.ts](src/lib/intacct/cycle-count.ts); only `listCycleCounts` is currently called — for a health probe)
-- Inventory transfer / move-between-stages via Intacct REST (second use case, not yet scoped)
+### Phase 2 — Equipment staging workflow (deferred, pending source-system decision)
+
+**Goal:** PO-driven workflow to move equipment through fixed stages (`Warehouse` → `Staging` → `OutForDelivery` → `Delivered`) as warehouse workers scan items.
+
+**Deferred because the source system is not yet decided.** The PO data may live in **TaskRay (Salesforce)**, not Sage Intacct — open question as of 2026-04-23. This meaningfully changes the implementation:
+
+- If TaskRay/Salesforce: build a second OAuth integration against Salesforce REST API (parallel to the Intacct one). Stage transitions likely post back to Salesforce task/custom-field updates.
+- If Sage Intacct: use the existing `/src/lib/intacct/` client, extend with `/objects/purchasing/document::Purchase Order/{key}` fetch. Stage transitions become Intacct inventory transfers or outbound documents.
+
+**Scoped design (source-agnostic, ready to build once confirmed):**
+- New models: `DeliveryBatch` (keyed to PO number, customer, project) + `DeliveryItem` (one row per unit; tracks `stage` + history).
+- Scanner advances one unit per scan with a ~2–3s undo/override toast (match an accidental scan or wrong-stage pick).
+- Manual PO entry form for dev before external system is wired.
+
+**Before implementing:** confirm with whoever owns the workflow whether the PO/equipment list lives in TaskRay or Sage.
+
+### Not yet started / future hardening
+
 - Token encryption at rest (currently plaintext in the `IntacctToken` table — fine for sandbox, harden before prod)
+- Webhook or polling strategy for pulling Intacct changes back into the local mirror
+- Multi-warehouse stock tracking per `InventoryItem` (Intacct has `item-warehouse-inventory`; app currently treats warehouse as metadata on the count header only)
 
 ---
 
@@ -185,6 +208,9 @@ NEXTAUTH_URL=https://your-domain.com
 | `GET` | `/api/cycle-count/[id]` | Fetch a single cycle count with entries |
 | `PUT` | `/api/cycle-count/[id]/entry` | Update a count entry (counted qty, notes) |
 | `GET` | `/api/cycle-count/export?id=X` | CSV export of a cycle count |
+| `GET` | `/api/cycle-count/export-xlsx?id=X` | Excel (.xlsx) export of a cycle count |
+| `GET` / `POST` / `PUT` / `DELETE` | `/api/warehouses` | Warehouse CRUD (writes admin-only) |
+| `GET` | `/api/users` | List users (for assignee dropdowns) |
 | `GET` / `POST` / `PUT` / `DELETE` | `/api/todos` | Task list CRUD |
 | `GET` | `/api/export/csv` | Download full inventory CSV |
 | `POST` | `/api/import/csv` | Upload inventory CSV |
@@ -208,12 +234,13 @@ Full schema in [prisma/schema.prisma](prisma/schema.prisma). Models:
 | `User` | Auth accounts with roles (`USER` / `ADMIN`) |
 | `InventoryItem` | Products — barcode, quantity, location, category, condition, cost |
 | `ScanLog` | Immutable audit trail of every scan event |
-| `CycleCount` | Header record for a counting session (warehouse, status, dates) |
-| `CycleCountEntry` | Per-item line in a cycle count (expected vs. counted qty, variance) |
+| `Warehouse` | Warehouse header; required on cycle counts. Syncs from Intacct when connected. |
+| `CycleCount` | Cycle-count header — mirrors Intacct's shape: documentNumber, description, warehouse, assignedTo, state, date fields |
+| `CycleCountEntry` | Per-line counting record — `onHand` / `counted` / `damaged` / `onHandAtEnd` plus tracking snapshot (bin/aisle/zone/row/serial/lot) |
 | `Todo` | Task / feature-request items (title, priority, status) |
 | `IntacctToken` | OAuth 2.0 access/refresh tokens for Sage Intacct REST API |
 
-Enums: `Role`, `Condition`, `ScanAction`, `CycleCountStatus`, `EntryStatus`, `TodoPriority`, `TodoStatus`.
+Enums: `Role`, `Condition`, `ScanAction`, `CycleCountState` (`notStarted` / `inProgress` / `counted` / `voided`), `LineCountStatus` (`notCounted` / `inProgress` / `skipped` / `counted`), `TodoPriority`, `TodoStatus`.
 
 ---
 

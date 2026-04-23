@@ -40,6 +40,16 @@ async function main() {
   console.log("Seeded admin user:", admin.email);
   console.log("Default password: admin123");
   console.log("⚠️  Change this password immediately after first login!");
+
+  const defaultWarehouses = ["Main Warehouse", "Staging", "Service Vehicle"];
+  for (const name of defaultWarehouses) {
+    await prisma.warehouse.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+    });
+  }
+  console.log(`Seeded ${defaultWarehouses.length} warehouses`);
 }
 
 main()
