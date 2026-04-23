@@ -20,6 +20,7 @@ model User {
   cycleCountsCreated CycleCount[]
   cycleCountEntries  CycleCountEntry[] @relation("CountedByUser")
   todos              Todo[]
+  intacctTokens      IntacctToken[]
 }
 
 model InventoryItem {
@@ -170,4 +171,17 @@ enum TodoStatus {
   TODO
   IN_PROGRESS
   DONE
+}
+
+model IntacctToken {
+  id            String   @id @default(cuid())
+  accessToken   String   @db.Text
+  refreshToken  String   @db.Text
+  expiresAt     DateTime
+  tokenType     String   @default("Bearer")
+  scope         String?  @db.Text
+  connectedBy   User?    @relation(fields: [connectedById], references: [id])
+  connectedById String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
