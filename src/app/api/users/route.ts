@@ -113,6 +113,35 @@ export async function PUT(req: NextRequest) {
   return NextResponse.json({ user });
 }
 
+/**
+ * Returns a map of how many records a user owns across each FK table.
+ * Used to decide whether a delete needs a reassignment step.
+ */
+async function linkedRecordCounts(userId: string) {
+  const [
+    inventoryItems,
+    scanLogs,
+    cycleCountsCreated,
+    cycleCountsAssigned,
+    todos,
+  ] = await Promise.all([
+    prisma.inventoryItem.count({ where: { createdById: userId } }),
+    prisma.scanLog.count({ where: { scannedById: userId } }),
+    prisma.cycleCount.count({ where: { createdById: userId } }),
+    prisma.cycleCount.count({ where: { assignedToId: userId } }),
+    prisma.todo.count({ where: { createdById: userId } }),
+  ]);
+  return {
+    inventoryItems,
+    scanLogs,
+    cycleCountsCreated,
+    cycleCountsAssigned,
+    todos,
+    total:
+      inventoryItems + scanLogs + cycleCountsCreated + cycleCountsAssigned + todos,
+  };
+}
+
 export async function DELETE(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user)
@@ -120,7 +149,9 @@ export async function DELETE(req: NextRequest) {
   if ((session.user as any).role !== "ADMIN")
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
 
-  const id = new URL(req.url).searchParams.get("id");
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id");
+  const reassignToId = url.searchParams.get("reassignToId");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
   const currentUserId = (session.user as any).id;
@@ -140,15 +171,85 @@ export async function DELETE(req: NextRequest) {
       );
   }
 
-  try {
-    await prisma.user.delete({ where: { id } });
-    return NextResponse.json({ success: true });
-  } catch (e: any) {
-    if (e.code === "P2003")
-      return NextResponse.json(
-        { error: "Cannot delete — user has linked records (scans, cycle counts, etc.)" },
-        { status: 400 }
-      );
-    throw e;
+  const linked = await linkedRecordCounts(id);
+
+  // No linked records → safe to delete outright.
+  if (linked.total === 0) {
+    try {
+      await prisma.user.delete({ where: { id } });
+      return NextResponse.json({ success: true });
+    } catch (e: any) {
+      if (e.code === "P2003")
+        return NextResponse.json(
+          {
+            error:
+              "Cannot delete — user has linked records. Refresh and try again with a reassign target.",
+          },
+          { status: 400 }
+        );
+      throw e;
+    }
   }
+
+  // Linked records exist. Caller must supply a user to inherit them.
+  if (!reassignToId)
+    return NextResponse.json(
+      {
+        error: "Reassignment required",
+        code: "REASSIGN_REQUIRED",
+        linked,
+      },
+      { status: 409 }
+    );
+
+  if (reassignToId === id)
+    return NextResponse.json(
+      { error: "Can't reassign records to the user being deleted" },
+      { status: 400 }
+    );
+
+  const newOwner = await prisma.user.findUnique({ where: { id: reassignToId } });
+  if (!newOwner)
+    return NextResponse.json({ error: "Reassign target not found" }, { status: 400 });
+
+  // Transfer required-FK records and delete atomically.
+  await prisma.$transaction([
+    prisma.inventoryItem.updateMany({
+      where: { createdById: id },
+      data: { createdById: reassignToId },
+    }),
+    prisma.scanLog.updateMany({
+      where: { scannedById: id },
+      data: { scannedById: reassignToId },
+    }),
+    prisma.cycleCount.updateMany({
+      where: { createdById: id },
+      data: { createdById: reassignToId },
+    }),
+    prisma.cycleCount.updateMany({
+      where: { assignedToId: id },
+      data: { assignedToId: reassignToId },
+    }),
+    prisma.todo.updateMany({
+      where: { createdById: id },
+      data: { createdById: reassignToId },
+    }),
+    // Nullable references — null out so the new owner doesn't inherit
+    // counts/tokens they didn't actually perform/authorize.
+    prisma.cycleCount.updateMany({
+      where: { approvedById: id },
+      data: { approvedById: null },
+    }),
+    prisma.cycleCountEntry.updateMany({
+      where: { countedById: id },
+      data: { countedById: null },
+    }),
+    prisma.intacctToken.updateMany({
+      where: { connectedById: id },
+      data: { connectedById: null },
+    }),
+    prisma.user.delete({ where: { id } }),
+  ]);
+
+  return NextResponse.json({ success: true, reassignedTo: reassignToId });
 }

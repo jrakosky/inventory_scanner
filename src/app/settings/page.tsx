@@ -71,6 +71,22 @@ export default function SettingsPage() {
   const [userFormError, setUserFormError] = useState("");
   const [userFormSaving, setUserFormSaving] = useState(false);
 
+  // Reassign-on-delete state
+  const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
+  const [reassignInfo, setReassignInfo] = useState<{
+    linked: {
+      inventoryItems: number;
+      scanLogs: number;
+      cycleCountsCreated: number;
+      cycleCountsAssigned: number;
+      todos: number;
+      total: number;
+    };
+  } | null>(null);
+  const [reassignToId, setReassignToId] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   const isAdmin = (session?.user as any)?.role === "ADMIN";
 
   const testSageConnection = async () => {
@@ -174,14 +190,46 @@ export default function SettingsPage() {
   };
 
   const handleDeleteUser = async (u: ManagedUser) => {
-    if (!confirm(`Delete user ${u.email}? This can't be undone.`)) return;
+    if (!confirm(`Delete user ${u.email}? If they own records you'll be asked where to reassign them next.`)) return;
+    setDeleteError("");
+    setReassignInfo(null);
+    setReassignToId("");
     const res = await fetch(`/api/users?id=${u.id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error || "Could not delete");
+    if (res.ok) {
+      fetchUsers();
       return;
     }
-    fetchUsers();
+    const err = await res.json();
+    if (err.code === "REASSIGN_REQUIRED") {
+      setDeleteTarget(u);
+      setReassignInfo({ linked: err.linked });
+      return;
+    }
+    alert(err.error || "Could not delete");
+  };
+
+  const handleConfirmReassignDelete = async () => {
+    if (!deleteTarget || !reassignToId) return;
+    setDeleteError("");
+    setDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/users?id=${deleteTarget.id}&reassignToId=${reassignToId}`,
+        { method: "DELETE" }
+      );
+      if (res.ok) {
+        setDeleteTarget(null);
+        setReassignInfo(null);
+        setReassignToId("");
+        fetchUsers();
+      } else {
+        const err = await res.json();
+        setDeleteError(err.error || "Could not delete");
+      }
+    } catch {
+      setDeleteError("Network error");
+    }
+    setDeleting(false);
   };
 
   const intacctCallbackStatus = searchParams.get("intacct");
@@ -588,6 +636,109 @@ export default function SettingsPage() {
               }
             >
               {userFormSaving ? "Saving..." : editUser ? "Save changes" : "Create user"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reassign-on-delete dialog */}
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setReassignInfo(null);
+            setReassignToId("");
+            setDeleteError("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reassign records before delete</DialogTitle>
+            <DialogDescription>
+              <strong>{deleteTarget?.name || deleteTarget?.email}</strong> owns
+              records that can't be orphaned. Pick another user to inherit
+              their history, then we'll delete the account in one step.
+            </DialogDescription>
+          </DialogHeader>
+
+          {reassignInfo && (
+            <div className="rounded-md border p-3 space-y-1 text-sm">
+              {reassignInfo.linked.inventoryItems > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Inventory items</span>
+                  <span className="font-mono">{reassignInfo.linked.inventoryItems}</span>
+                </div>
+              )}
+              {reassignInfo.linked.scanLogs > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Scan log entries</span>
+                  <span className="font-mono">{reassignInfo.linked.scanLogs}</span>
+                </div>
+              )}
+              {reassignInfo.linked.cycleCountsCreated > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Cycle counts created</span>
+                  <span className="font-mono">{reassignInfo.linked.cycleCountsCreated}</span>
+                </div>
+              )}
+              {reassignInfo.linked.cycleCountsAssigned > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Cycle counts assigned</span>
+                  <span className="font-mono">{reassignInfo.linked.cycleCountsAssigned}</span>
+                </div>
+              )}
+              {reassignInfo.linked.todos > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">To-do items</span>
+                  <span className="font-mono">{reassignInfo.linked.todos}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label>Reassign to</Label>
+            <Select value={reassignToId} onValueChange={setReassignToId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a user" />
+              </SelectTrigger>
+              <SelectContent>
+                {users
+                  .filter(u => u.id !== deleteTarget?.id)
+                  .map(u => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name || u.email} ({u.role})
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              The new owner will appear as the creator/scanner on all inherited records.
+              Approval and &quot;counted by&quot; signatures on individual cycle-count
+              events are nulled out (not transferred) to preserve audit accuracy.
+            </p>
+          </div>
+
+          {deleteError && (
+            <p className="text-sm text-destructive">{deleteError}</p>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setDeleteTarget(null); setReassignInfo(null); setReassignToId(""); }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmReassignDelete}
+              disabled={deleting || !reassignToId}
+            >
+              <Trash2 className="mr-1 h-4 w-4" />
+              {deleting ? "Reassigning..." : "Reassign & delete"}
             </Button>
           </DialogFooter>
         </DialogContent>
