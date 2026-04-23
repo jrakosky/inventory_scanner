@@ -13,12 +13,14 @@ import {
   Building2,
   User as UserIcon,
   ExternalLink,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -60,6 +62,10 @@ interface CycleCountDetail {
   excludedAllocatedQuantity: boolean;
   warehouse: { id: string; name: string } | null;
   assignedTo: { id: string; name: string | null; email: string } | null;
+  approvedBy: { id: string; name: string | null; email: string } | null;
+  approvedAt: string | null;
+  approvalReason: string | null;
+  totalVarianceValue: string | null;
   entries: CycleCountEntry[];
   summary: {
     totalLines: number;
@@ -67,6 +73,10 @@ interface CycleCountDetail {
     linesSkipped: number;
     linesPending: number;
     linesWithVariance: number;
+    totalVarianceValue: string;
+    varianceThreshold: string;
+    requiresApproval: boolean;
+    approvalRequiresAdmin: boolean;
   };
 }
 
@@ -104,6 +114,9 @@ export default function CycleCountDetailPage() {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [showFinish, setShowFinish] = useState(false);
+  const [approvalReason, setApprovalReason] = useState("");
+  const [finishError, setFinishError] = useState("");
+  const [finishing, setFinishing] = useState(false);
   const [filter, setFilter] = useState<"all" | "pending" | "counted" | "variance" | "skipped">("all");
   const scanInputRef = useRef<HTMLInputElement>(null);
   const countInputRef = useRef<HTMLInputElement>(null);
@@ -187,15 +200,36 @@ export default function CycleCountDetailPage() {
   };
 
   const handleFinish = async () => {
+    setFinishError("");
+    setFinishing(true);
     try {
-      await fetch("/api/cycle-count", {
+      const res = await fetch("/api/cycle-count", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cycleCountId: id, state: "counted" }),
+        body: JSON.stringify({
+          cycleCountId: id,
+          state: "counted",
+          approvalReason: approvalReason.trim() || undefined,
+        }),
       });
-      setShowFinish(false);
-      fetchData();
-    } catch {}
+      if (res.ok) {
+        setShowFinish(false);
+        setApprovalReason("");
+        fetchData();
+      } else {
+        const err = await res.json();
+        if (err.code === "APPROVAL_REQUIRED") {
+          setFinishError(
+            `Total variance $${err.totalVarianceValue} meets or exceeds the $${err.varianceThreshold} threshold. An approval reason is required.`
+          );
+        } else {
+          setFinishError(err.error || "Failed to finish count");
+        }
+      }
+    } catch {
+      setFinishError("Network error");
+    }
+    setFinishing(false);
   };
 
   const filteredEntries = data?.entries.filter(e => {
@@ -276,6 +310,14 @@ export default function CycleCountDetailPage() {
               <p className="mt-0.5 text-sm text-blue-800">
                 This count has been marked as counted. Reconciliation (accepting adjustments and posting to GL) happens in the Sage Intacct UI, not here.
               </p>
+              {data.approvedBy && (
+                <p className="mt-2 text-xs text-blue-800">
+                  <ShieldAlert className="inline h-3 w-3 mr-0.5" />
+                  Approved by {data.approvedBy.name || data.approvedBy.email}
+                  {data.approvedAt && ` on ${new Date(data.approvedAt).toLocaleString()}`}
+                  {data.approvalReason && ` — "${data.approvalReason}"`}
+                </p>
+              )}
             </div>
             <Button
               variant="outline"
@@ -285,6 +327,28 @@ export default function CycleCountDetailPage() {
               Open Sage
               <ExternalLink className="ml-1 h-3 w-3" />
             </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Variance summary — shown during active count so counters see the running tally */}
+      {(isActive || isCounted) && data.summary.linesInCount > 0 && (
+        <Card className={data.summary.requiresApproval ? "border-amber-300 bg-amber-50" : "border-border/60"}>
+          <CardContent className="flex items-center justify-between gap-3 p-3">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-muted-foreground">Total variance value</p>
+              <p className="text-lg font-bold font-mono">
+                ${data.summary.totalVarianceValue}
+                {data.summary.requiresApproval && (
+                  <span className="ml-2 text-xs font-normal text-amber-700">
+                    ≥ ${data.summary.varianceThreshold} threshold — approval required
+                  </span>
+                )}
+              </p>
+            </div>
+            {data.summary.requiresApproval && (
+              <ShieldAlert className="h-5 w-5 shrink-0 text-amber-600" />
+            )}
           </CardContent>
         </Card>
       )}
@@ -536,23 +600,82 @@ export default function CycleCountDetailPage() {
       </div>
 
       {/* Finish dialog */}
-      <Dialog open={showFinish} onOpenChange={setShowFinish}>
+      <Dialog open={showFinish} onOpenChange={(open) => { if (!open) { setShowFinish(false); setFinishError(""); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Finish counting?</DialogTitle>
+            <DialogTitle>
+              {data.summary.requiresApproval ? "Review & approve" : "Finish counting?"}
+            </DialogTitle>
             <DialogDescription>
-              This marks the count as complete and ready for reconciliation in Sage Intacct.
-              {data.summary.linesWithVariance > 0 && (
-                <span className="block mt-2 font-medium text-amber-600">
-                  {data.summary.linesWithVariance} lines have variances that will be reviewed in Sage.
-                </span>
+              {data.summary.requiresApproval ? (
+                <>
+                  Total variance value on this count is <strong>${data.summary.totalVarianceValue}</strong>,
+                  which meets or exceeds the <strong>${data.summary.varianceThreshold}</strong> approval threshold.
+                  Review the variant lines and provide a reason before posting the count.
+                  {data.summary.approvalRequiresAdmin && (
+                    <span className="block mt-2 text-amber-700">An admin must perform this approval.</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  This marks the count as complete and ready for reconciliation in Sage Intacct.
+                  {data.summary.linesWithVariance > 0 && (
+                    <span className="block mt-2 font-medium text-amber-600">
+                      {data.summary.linesWithVariance} lines have variances that will be reviewed in Sage.
+                    </span>
+                  )}
+                  Once finished, the app can no longer edit line quantities.
+                </>
               )}
-              Once finished, the app can no longer edit line quantities.
             </DialogDescription>
           </DialogHeader>
+
+          {data.summary.requiresApproval && (
+            <div className="space-y-3">
+              <div className="max-h-40 overflow-auto rounded-md border p-2 text-xs space-y-1">
+                {data.entries
+                  .filter(e => e.lineCountStatus === "counted" && (lineVariance(e) ?? 0) !== 0)
+                  .sort((a, b) => Math.abs(lineVariance(b) ?? 0) - Math.abs(lineVariance(a) ?? 0))
+                  .slice(0, 10)
+                  .map(e => {
+                    const v = lineVariance(e) ?? 0;
+                    return (
+                      <div key={e.id} className="flex justify-between font-mono">
+                        <span className="truncate">{e.inventoryItem.name}</span>
+                        <span className={v > 0 ? "text-emerald-700" : "text-red-700"}>
+                          {v > 0 ? "+" : ""}{v.toFixed(2)}
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Approval reason *</Label>
+                <Textarea
+                  value={approvalReason}
+                  onChange={e => setApprovalReason(e.target.value)}
+                  placeholder="Why are these variances acceptable to post? (e.g. theft report filed, damaged in transit, miscount corrected)"
+                  rows={3}
+                />
+              </div>
+            </div>
+          )}
+
+          {finishError && (
+            <p className="text-sm text-destructive">{finishError}</p>
+          )}
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowFinish(false)}>Cancel</Button>
-            <Button onClick={handleFinish}>Finish counting</Button>
+            <Button variant="outline" onClick={() => setShowFinish(false)} disabled={finishing}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleFinish}
+              disabled={finishing || (data.summary.requiresApproval && !approvalReason.trim())}
+            >
+              {finishing ? "Posting..." : data.summary.requiresApproval ? "Approve & finish" : "Finish counting"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

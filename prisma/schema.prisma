@@ -19,6 +19,7 @@ model User {
   inventoryItems       InventoryItem[]
   cycleCountsCreated   CycleCount[]      @relation("CycleCountCreatedBy")
   cycleCountsAssigned  CycleCount[]      @relation("CycleCountAssignedTo")
+  cycleCountsApproved  CycleCount[]      @relation("CycleCountApprovedBy")
   cycleCountEntries    CycleCountEntry[] @relation("CountedByUser")
   todos                Todo[]
   intacctTokens        IntacctToken[]
@@ -128,6 +129,14 @@ model CycleCount {
   endDate                   DateTime?
   adjustmentDate            DateTime?
   adjustmentPostDate        DateTime?
+  // Pre-post review guardrail: counts with total variance value above the
+  // configured threshold require explicit approval before transitioning to
+  // `counted`. See README → Cycle count reconciliation guardrails.
+  approvedBy                User?               @relation("CycleCountApprovedBy", fields: [approvedById], references: [id])
+  approvedById              String?
+  approvedAt                DateTime?
+  approvalReason            String?             @db.Text
+  totalVarianceValue        Decimal?            @db.Decimal(12, 2)
   intacctKey                String?             @unique
   createdAt                 DateTime            @default(now())
   updatedAt                 DateTime            @updatedAt

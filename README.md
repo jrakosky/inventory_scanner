@@ -338,6 +338,90 @@ It probes the REST API (no auth, Basic auth, sender headers) and the XML Gateway
 
 ---
 
+## Cycle count reconciliation guardrails
+
+Cycle counts touch inventory valuation, and inventory valuation flows into COGS, gross margin, and the balance sheet. The guardrails below exist to protect that integrity. **Read this section before changing any code in [src/lib/intacct/cycle-count.ts](src/lib/intacct/cycle-count.ts) or the cycle-count API/UI.**
+
+### Guardrail 1 — Only call Sage's standard cycle-count endpoints
+
+When wiring the local cycle-count flow through to Sage, go through [src/lib/intacct/cycle-count.ts](src/lib/intacct/cycle-count.ts) exclusively. Those functions hit the standard REST resource:
+
+- `POST /objects/inventory-control/cycle-count` — create
+- `PATCH /objects/inventory-control/cycle-count/{key}` — update line quantities
+- (State transition to `reconciled` happens in Sage's UI, not via our app.)
+
+When a count is reconciled in Sage, Sage generates inventory adjustment transactions that respect the item's configured cost method:
+
+- **FIFO / LIFO:** adjustments consume/add to the cost layers in the correct order, preserving the layered valuation model.
+- **Average cost:** the weighted average is recalculated correctly.
+- **Standard cost:** the variance posts to the standard-cost variance account.
+
+**What you must never do:**
+- ❌ Write quantities directly to `inventory-control/item` to "fix" inventory levels.
+- ❌ Post a manual GL journal entry to adjust inventory value.
+- ❌ Use any cost-override field on adjustment lines to bypass the configured cost method.
+- ❌ Create a parallel "quick fix" endpoint that writes to inventory without going through a cycle count or a standard inventory transaction.
+
+Any of those paths destroy the FIFO/LIFO cost layers. The immediate symptom is that COGS on future sales will be wrong. The deeper problem is that inventory valuation on the balance sheet disagrees with the sum of item cost layers, which is an audit red flag and, depending on materiality, a restatement-worthy accounting error. There is no easy "undo."
+
+If a future feature appears to require one of the don'ts above, treat it as a design bug: the count or the inventory move should be modeled as a first-class Intacct transaction (cycle count, inventory adjustment, inventory transfer, receipt, shipment), not as a direct write.
+
+### Guardrail 2 — Pre-post variance threshold review
+
+Before a count can transition to `counted` (the hand-off state to Sage), the app computes the **total variance value**:
+
+```
+totalVarianceValue = sum over all counted lines of |counted - onHand| × unitCost
+```
+
+If `totalVarianceValue ≥ CYCLE_COUNT_VARIANCE_THRESHOLD_USD`, the count cannot be finished without:
+
+1. An explicit **approval reason** (free-text, required). The app stores this reason, approver user, and timestamp on the cycle-count record — it's part of the audit trail.
+2. **Optionally, ADMIN role.** When `CYCLE_COUNT_APPROVAL_REQUIRES_ADMIN=true`, only users with role `ADMIN` can provide the approval. This enables a two-person workflow (counter + approver).
+
+The API returns HTTP `409 Conflict` with `code: "APPROVAL_REQUIRED"` when a transition attempt lacks the required approval. The UI surfaces this as a "Review & approve" dialog that lists the top 10 variant lines (by absolute variance) and requires the reason before the Finish button enables.
+
+**Configuration (`.env`):**
+
+```
+CYCLE_COUNT_VARIANCE_THRESHOLD_USD="500"        # default: 500
+CYCLE_COUNT_APPROVAL_REQUIRES_ADMIN="false"     # default: false
+```
+
+Tune the threshold to your organization's materiality. A good starting point is the smallest dollar amount your auditors would expect documentation for — often the same threshold used for expense receipts. Set lower during onboarding until counters settle into rhythm; raise it as trust in the scanning workflow grows.
+
+**Audit fields on the `CycleCount` record:**
+
+| Field | When it's set | Purpose |
+|---|---|---|
+| `approvedById` | At `counted` transition if over threshold | Who approved |
+| `approvedAt` | At `counted` transition if over threshold | When they approved |
+| `approvalReason` | At `counted` transition if over threshold | Why the variance is acceptable |
+| `totalVarianceValue` | At `counted` transition (always) | Cached computed variance in USD |
+
+These fields are displayed on the `counted`-state banner on the detail page and are included in the Excel export's Summary sheet. When Sage's own cycle-count API response includes reconciliation data, consider displaying that alongside the pre-post approval for a complete audit picture.
+
+### Guardrail 3 — Separation of duties
+
+When `CYCLE_COUNT_APPROVAL_REQUIRES_ADMIN=true`, the same user typically should not perform BOTH the count AND the approval. The current code does not enforce this automatically (the approver could in theory be the same as `assignedTo`), but the audit trail makes violations visible. If your auditors require hard enforcement, add a check in the `PUT` state-transition handler: `if (session.user.id === cycleCount.assignedToId) reject`.
+
+### Guardrail 4 — Valuation is Sage's job, not ours
+
+The app displays variance in both quantity and dollar terms for the counter's convenience. **Those dollar numbers are not authoritative.** They use `unitCost` snapshotted at count-create time, which may diverge from Sage's actual FIFO/LIFO layer cost at reconciliation time. When Sage reconciles, it may compute a different adjustment value. The app's number is decision-support; Sage's is ground truth.
+
+Do not "fix" discrepancies between the app's variance dollars and Sage's reconciled adjustment dollars by overriding either side. They're expected to differ slightly under FIFO/LIFO cost layering.
+
+### Concrete extension points for the incoming developer
+
+When you wire actual Sage sync in `src/app/api/cycle-count/route.ts`:
+
+1. **Create path:** after local `prisma.cycleCount.create`, call `intacctClient.createCycleCount(...)` (already typed in `src/lib/intacct/cycle-count.ts`). Store the returned `key` in `CycleCount.intacctKey`. If the Intacct call fails, roll back the local create — don't leave the two systems out of sync.
+2. **Line update path:** when recording a count per line, `PATCH` the line to Intacct via `intacctClient.updateCycleCount(...)` with just the changed line. This is safe to batch: hold line edits locally during an active count (as the UI already does), and flush them on `state → counted`.
+3. **State transition path:** at `counted`, after the approval gate passes, push the full line set to Intacct. Only mark local state = `counted` after Intacct returns 2xx. That's the write-through invariant (Sage is source of truth).
+4. **Refresh path:** the status endpoint (`/api/intacct/status`) already calls `listCycleCounts` as a health probe. Add a "Refresh from Sage" button on the detail page that reloads the cycle count from Intacct and updates the local mirror. This is how you verify round-trip and catch drift.
+
+---
+
 ## Troubleshooting
 
 **Login returns 401 with no useful error**

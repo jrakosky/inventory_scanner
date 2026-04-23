@@ -1,3 +1,18 @@
+/**
+ * Sage Intacct cycle-count REST client.
+ *
+ * GUARDRAIL — use ONLY these endpoints to push cycle-count data to Intacct.
+ * Intacct generates adjustment transactions from a completed cycle count
+ * using the item's configured cost method (FIFO / LIFO / average / standard).
+ * Bypassing this flow — for example, writing quantities directly to
+ * `inventory-control/item`, posting manual journal entries, or setting
+ * cost-override fields on adjustment lines — destroys the FIFO/LIFO cost
+ * layers and corrupts inventory valuation, COGS, and downstream reports.
+ *
+ * If a future feature appears to require bypass, treat it as a design bug
+ * and escalate — do NOT add a new endpoint that sidesteps this module.
+ */
+
 import { intacctFetch } from "./client";
 
 export interface IntacctMeta {

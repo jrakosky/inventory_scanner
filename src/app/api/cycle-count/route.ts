@@ -1,8 +1,41 @@
+/**
+ * Cycle-count API.
+ *
+ * GUARDRAIL — Sage Intacct sync (forthcoming wiring):
+ * When syncing cycle counts to Intacct, call ONLY the official endpoints
+ * defined in src/lib/intacct/cycle-count.ts — those hit the standard
+ * `/objects/inventory-control/cycle-count` resource, which lets Intacct
+ * generate the adjustment transactions using the item's configured cost
+ * method (FIFO / LIFO / average / standard). Do NOT:
+ *   - Write directly to `inventory-control/item` to override quantities.
+ *   - Post manual journal entries for the variance.
+ *   - Use any "cost override" field on adjustment lines.
+ * Bypassing the standard flow breaks the FIFO/LIFO cost layers and
+ * corrupts inventory valuation, COGS, and downstream reports.
+ *
+ * GUARDRAIL — Variance threshold review:
+ * Before transitioning a count to `counted`, the total variance value
+ * (sum of |counted - onHand| * unitCost) is computed. If it meets or
+ * exceeds CYCLE_COUNT_VARIANCE_THRESHOLD_USD, the caller must supply an
+ * approval reason and — if CYCLE_COUNT_APPROVAL_REQUIRES_ADMIN is true —
+ * be an ADMIN. See README → Cycle count reconciliation guardrails.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+
+function getVarianceThreshold(): number {
+  const raw = process.env.CYCLE_COUNT_VARIANCE_THRESHOLD_USD;
+  const n = raw ? parseFloat(raw) : 500;
+  return isNaN(n) || n < 0 ? 500 : n;
+}
+
+function approvalRequiresAdmin(): boolean {
+  return process.env.CYCLE_COUNT_APPROVAL_REQUIRES_ADMIN === "true";
+}
 
 async function generateDocumentNumber(): Promise<string> {
   const count = await prisma.cycleCount.count();
@@ -19,6 +52,24 @@ function toDecimalString(v: unknown): string | null {
 function variance(counted: Prisma.Decimal | null, onHand: Prisma.Decimal | null): number {
   if (!counted || !onHand) return 0;
   return counted.toNumber() - onHand.toNumber();
+}
+
+/**
+ * Compute the signed dollar value of variance across all counted lines.
+ * Used by the pre-post threshold guardrail.
+ */
+function totalVarianceValue(entries: Array<{
+  counted: Prisma.Decimal | null;
+  onHand: Prisma.Decimal | null;
+  unitCost: Prisma.Decimal | null;
+  lineCountStatus: string;
+}>): number {
+  return entries.reduce((sum, e) => {
+    if (e.lineCountStatus !== "counted") return sum;
+    const v = variance(e.counted, e.onHand);
+    const cost = e.unitCost ? e.unitCost.toNumber() : 0;
+    return sum + Math.abs(v) * cost;
+  }, 0);
 }
 
 export async function GET(req: NextRequest) {
@@ -38,6 +89,7 @@ export async function GET(req: NextRequest) {
         warehouse: true,
         assignedTo: { select: { id: true, name: true, email: true } },
         createdBy: { select: { id: true, name: true, email: true } },
+        approvedBy: { select: { id: true, name: true, email: true } },
         entries: {
           include: {
             inventoryItem: true,
@@ -58,6 +110,10 @@ export async function GET(req: NextRequest) {
       l.lineCountStatus === "counted" && variance(l.counted, l.onHand) !== 0
     ).length;
 
+    const totalVariance = totalVarianceValue(lines);
+    const threshold = getVarianceThreshold();
+    const requiresApproval = totalVariance >= threshold;
+
     return NextResponse.json({
       ...cycleCount,
       summary: {
@@ -66,6 +122,10 @@ export async function GET(req: NextRequest) {
         linesSkipped,
         linesPending,
         linesWithVariance,
+        totalVarianceValue: totalVariance.toFixed(2),
+        varianceThreshold: threshold.toFixed(2),
+        requiresApproval,
+        approvalRequiresAdmin: approvalRequiresAdmin(),
       },
     });
   }
@@ -199,6 +259,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const userId = (session.user as any).id;
+  const userRole = (session.user as any).role;
   const body = await req.json();
 
   if (body.entryId) {
@@ -247,7 +308,7 @@ export async function PUT(req: NextRequest) {
   }
 
   if (body.cycleCountId && body.state) {
-    const { cycleCountId, state } = body;
+    const { cycleCountId, state, approvalReason } = body;
 
     const validTransitions: Record<string, string[]> = {
       notStarted: ["inProgress", "voided"],
@@ -256,7 +317,10 @@ export async function PUT(req: NextRequest) {
       voided: [],
     };
 
-    const current = await prisma.cycleCount.findUnique({ where: { id: cycleCountId } });
+    const current = await prisma.cycleCount.findUnique({
+      where: { id: cycleCountId },
+      include: { entries: true },
+    });
     if (!current)
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (!validTransitions[current.state]?.includes(state))
@@ -269,8 +333,38 @@ export async function PUT(req: NextRequest) {
       updateData.startDate = now;
       await snapshotOnHand(cycleCountId);
     }
+
     if (state === "counted") {
+      // GUARDRAIL — variance threshold review.
+      const totalVariance = totalVarianceValue(current.entries);
+      const threshold = getVarianceThreshold();
+
+      if (totalVariance >= threshold) {
+        if (!approvalReason?.trim()) {
+          return NextResponse.json(
+            {
+              error: "Approval required",
+              code: "APPROVAL_REQUIRED",
+              totalVarianceValue: totalVariance.toFixed(2),
+              varianceThreshold: threshold.toFixed(2),
+              approvalRequiresAdmin: approvalRequiresAdmin(),
+            },
+            { status: 409 }
+          );
+        }
+        if (approvalRequiresAdmin() && userRole !== "ADMIN") {
+          return NextResponse.json(
+            { error: "Only an admin can approve this count" },
+            { status: 403 }
+          );
+        }
+        updateData.approvedBy = { connect: { id: userId } };
+        updateData.approvedAt = now;
+        updateData.approvalReason = approvalReason.trim();
+      }
+
       updateData.endDate = now;
+      updateData.totalVarianceValue = totalVariance.toFixed(2);
       await snapshotOnHandAtEnd(cycleCountId);
     }
 
